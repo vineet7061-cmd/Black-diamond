@@ -36,6 +36,7 @@ export default function Page() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [filter, setFilter] = useState<'all' | 'LMV' | 'HMV'>('all')
   const [isLoading, setIsLoading] = useState(true)
+  const [isUploading, setIsUploading] = useState(false) // New state for tracking upload status
   
   // Navigation States
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null)
@@ -124,6 +125,31 @@ export default function Page() {
   const hasAllVehicleDocs = (vehicle: Vehicle) => {
     return !!(vehicle.rcName && vehicle.insuranceName && vehicle.pucName && vehicle.permitName);
   }
+
+  // ================= CLOUDINARY UPLOAD LOGIC =================
+  const uploadToCloudinary = async (file: File | null) => {
+    if (!file) return null;
+  
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || ""); 
+    formData.append("cloud_name", process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "");
+  
+    try {
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+      const data = await response.json();
+      return data.secure_url; // Returns the uploaded image URL
+    } catch (error) {
+      console.error("Image upload failed:", error);
+      return null;
+    }
+  };
 
   // Handlers
   const handleUpdateCondition = async (e: React.MouseEvent, id: string) => {
@@ -214,21 +240,33 @@ export default function Page() {
   const handleAddDriver = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedVehicleId || !driverName) return
+    
+    setIsUploading(true) // Start loading state
+
+    // 1. Upload files to Cloudinary first
+    const photoUrl = await uploadToCloudinary(driverPhoto)
+    const dlUrl = await uploadToCloudinary(driverDL)
+    const gatePassUrl = await uploadToCloudinary(driverGatePass)
+    const trainingUrl = await uploadToCloudinary(driverTraining)
 
     const driverId = selectedVehicle?.driver ? selectedVehicle.driver.id : Math.random().toString(36).substr(2, 9)
 
+    // 2. Prepare data for Supabase (using URLs if uploaded, otherwise keep existing)
     const updateData = {
       driver_id: driverId,
       driver_name: driverName,
       driver_contact: driverContact,
-      driver_photo_name: driverPhoto?.name || selectedVehicle?.driver?.photoName || null,
-      driver_license_name: driverDL?.name || selectedVehicle?.driver?.licenseName || null,
-      driver_gate_pass_name: driverGatePass?.name || selectedVehicle?.driver?.gatePassName || null,
-      driver_training_card_name: driverTraining?.name || selectedVehicle?.driver?.trainingCardName || null,
+      driver_photo_name: photoUrl || selectedVehicle?.driver?.photoName || null,
+      driver_license_name: dlUrl || selectedVehicle?.driver?.licenseName || null,
+      driver_gate_pass_name: gatePassUrl || selectedVehicle?.driver?.gatePassName || null,
+      driver_training_card_name: trainingUrl || selectedVehicle?.driver?.trainingCardName || null,
     }
 
+    // 3. Save to database
     const { error } = await supabase.from('vehicles').update(updateData).eq('id', selectedVehicleId)
     
+    setIsUploading(false) // Stop loading state
+
     if (!error) {
       await fetchVehicles()
       setIsDriverModalOpen(false)
@@ -246,14 +284,26 @@ export default function Page() {
     e.preventDefault()
     if (!selectedVehicleId) return
 
+    setIsUploading(true) // Start loading state
+
+    // 1. Upload files to Cloudinary
+    const rcUrl = await uploadToCloudinary(vehRC)
+    const insuranceUrl = await uploadToCloudinary(vehInsurance)
+    const pucUrl = await uploadToCloudinary(vehPUC)
+    const permitUrl = await uploadToCloudinary(vehPermit)
+
+    // 2. Prepare data for Supabase
     const updateData = {
-      rc_name: vehRC?.name || selectedVehicle?.rcName || null,
-      insurance_name: vehInsurance?.name || selectedVehicle?.insuranceName || null,
-      puc_name: vehPUC?.name || selectedVehicle?.pucName || null,
-      permit_name: vehPermit?.name || selectedVehicle?.permitName || null,
+      rc_name: rcUrl || selectedVehicle?.rcName || null,
+      insurance_name: insuranceUrl || selectedVehicle?.insuranceName || null,
+      puc_name: pucUrl || selectedVehicle?.pucName || null,
+      permit_name: permitUrl || selectedVehicle?.permitName || null,
     }
 
+    // 3. Save to database
     const { error } = await supabase.from('vehicles').update(updateData).eq('id', selectedVehicleId)
+
+    setIsUploading(false) // Stop loading state
 
     if (!error) {
       await fetchVehicles()
@@ -273,7 +323,7 @@ export default function Page() {
       />
       <label htmlFor={`upload-${label}`} className="cursor-pointer flex flex-col items-center gap-1">
         <Icon className={`w-6 h-6 ${file ? 'text-emerald-600' : 'text-blue-600'}`} />
-        <span className="text-xs font-semibold text-gray-700">
+        <span className="text-xs font-semibold text-gray-700 truncate w-full max-w-[120px]" title={file?.name}>
           {file ? file.name : `Upload ${label}`}
         </span>
       </label>
@@ -292,8 +342,12 @@ export default function Page() {
 
           <div className="bg-white border-2 border-gray-200 rounded-xl p-6 md:p-8 max-w-2xl mx-auto shadow-sm">
             <div className="flex flex-col md:flex-row items-center gap-6 mb-8 border-b border-gray-100 pb-8">
-              <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center border-4 border-blue-50">
-                <User className="w-10 h-10 text-blue-600" />
+              <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center border-4 border-blue-50 overflow-hidden">
+                {selectedDriver.photoName ? (
+                  <img src={selectedDriver.photoName} alt="Driver" className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-10 h-10 text-blue-600" />
+                )}
               </div>
               <div className="text-center md:text-left">
                 <h1 className="text-2xl font-bold text-gray-900">{selectedDriver.name}</h1>
@@ -314,7 +368,11 @@ export default function Page() {
                   <IdCard className="w-6 h-6 text-blue-600" />
                   <div>
                     <p className="text-sm font-semibold text-gray-900">Driving License</p>
-                    <p className="text-xs text-gray-500">{selectedDriver.licenseName || 'Not uploaded'}</p>
+                    {selectedDriver.licenseName ? (
+                      <a href={selectedDriver.licenseName} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">View Document</a>
+                    ) : (
+                      <p className="text-xs text-gray-500">Not uploaded</p>
+                    )}
                   </div>
                 </div>
                 {selectedDriver.licenseName && <CheckCircle className="w-5 h-5 text-emerald-500" />}
@@ -325,7 +383,11 @@ export default function Page() {
                   <FileText className="w-6 h-6 text-amber-600" />
                   <div>
                     <p className="text-sm font-semibold text-gray-900">Gate Pass</p>
-                    <p className="text-xs text-gray-500">{selectedDriver.gatePassName || 'Not uploaded'}</p>
+                    {selectedDriver.gatePassName ? (
+                      <a href={selectedDriver.gatePassName} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">View Document</a>
+                    ) : (
+                      <p className="text-xs text-gray-500">Not uploaded</p>
+                    )}
                   </div>
                 </div>
                 {selectedDriver.gatePassName && <CheckCircle className="w-5 h-5 text-emerald-500" />}
@@ -336,7 +398,11 @@ export default function Page() {
                   <UploadCloud className="w-6 h-6 text-purple-600" />
                   <div>
                     <p className="text-sm font-semibold text-gray-900">Training Card</p>
-                    <p className="text-xs text-gray-500">{selectedDriver.trainingCardName || 'Not uploaded'}</p>
+                    {selectedDriver.trainingCardName ? (
+                      <a href={selectedDriver.trainingCardName} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">View Document</a>
+                    ) : (
+                      <p className="text-xs text-gray-500">Not uploaded</p>
+                    )}
                   </div>
                 </div>
                 {selectedDriver.trainingCardName && <CheckCircle className="w-5 h-5 text-emerald-500" />}
@@ -407,8 +473,12 @@ export default function Page() {
 
               {selectedVehicle.driver ? (
                 <div className="border-2 border-gray-200 rounded-lg p-4 flex items-center gap-4 transition-all bg-gray-50">
-                  <div className="bg-blue-200 p-3 rounded-full text-blue-700">
-                    <User className="w-6 h-6" />
+                  <div className="bg-blue-200 w-12 h-12 rounded-full text-blue-700 overflow-hidden flex items-center justify-center">
+                    {selectedVehicle.driver.photoName ? (
+                      <img src={selectedVehicle.driver.photoName} alt="Driver" className="w-full h-full object-cover" />
+                    ) : (
+                      <User className="w-6 h-6" />
+                    )}
                   </div>
                   
                   <div 
@@ -469,7 +539,11 @@ export default function Page() {
                     <FileText className="w-6 h-6 text-indigo-600" />
                     <div>
                       <p className="text-sm font-semibold text-gray-900">RC Book</p>
-                      <p className="text-xs text-gray-500 line-clamp-1" title={selectedVehicle.rcName}>{selectedVehicle.rcName || 'Not uploaded'}</p>
+                      {selectedVehicle.rcName ? (
+                        <a href={selectedVehicle.rcName} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:underline">View Document</a>
+                      ) : (
+                        <p className="text-xs text-gray-500">Not uploaded</p>
+                      )}
                     </div>
                   </div>
                   {selectedVehicle.rcName ? <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" /> : <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />}
@@ -480,7 +554,11 @@ export default function Page() {
                     <ShieldCheck className="w-6 h-6 text-blue-600" />
                     <div>
                       <p className="text-sm font-semibold text-gray-900">Insurance</p>
-                      <p className="text-xs text-gray-500 line-clamp-1" title={selectedVehicle.insuranceName}>{selectedVehicle.insuranceName || 'Not uploaded'}</p>
+                      {selectedVehicle.insuranceName ? (
+                        <a href={selectedVehicle.insuranceName} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:underline">View Document</a>
+                      ) : (
+                        <p className="text-xs text-gray-500">Not uploaded</p>
+                      )}
                     </div>
                   </div>
                   {selectedVehicle.insuranceName ? <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" /> : <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />}
@@ -491,7 +569,11 @@ export default function Page() {
                     <Wind className="w-6 h-6 text-emerald-600" />
                     <div>
                       <p className="text-sm font-semibold text-gray-900">PUC (Pollution)</p>
-                      <p className="text-xs text-gray-500 line-clamp-1" title={selectedVehicle.pucName}>{selectedVehicle.pucName || 'Not uploaded'}</p>
+                      {selectedVehicle.pucName ? (
+                        <a href={selectedVehicle.pucName} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:underline">View Document</a>
+                      ) : (
+                        <p className="text-xs text-gray-500">Not uploaded</p>
+                      )}
                     </div>
                   </div>
                   {selectedVehicle.pucName ? <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" /> : <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />}
@@ -502,7 +584,11 @@ export default function Page() {
                     <FileSignature className="w-6 h-6 text-purple-600" />
                     <div>
                       <p className="text-sm font-semibold text-gray-900">Vehicle Permit</p>
-                      <p className="text-xs text-gray-500 line-clamp-1" title={selectedVehicle.permitName}>{selectedVehicle.permitName || 'Not uploaded'}</p>
+                      {selectedVehicle.permitName ? (
+                        <a href={selectedVehicle.permitName} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:underline">View Document</a>
+                      ) : (
+                        <p className="text-xs text-gray-500">Not uploaded</p>
+                      )}
                     </div>
                   </div>
                   {selectedVehicle.permitName ? <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" /> : <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />}
@@ -543,8 +629,8 @@ export default function Page() {
                   </div>
                 </div>
 
-                <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white mt-4">
-                  {selectedVehicle?.driver ? 'Update Driver' : 'Save Driver & Upload'}
+                <Button type="submit" disabled={isUploading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white mt-4">
+                  {isUploading ? 'Uploading & Saving...' : (selectedVehicle?.driver ? 'Update Driver' : 'Save Driver & Upload')}
                 </Button>
               </form>
             </div>
@@ -571,8 +657,8 @@ export default function Page() {
                   </div>
                 </div>
 
-                <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white mt-4">
-                  Save & Upload Documents
+                <Button type="submit" disabled={isUploading} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white mt-4">
+                  {isUploading ? 'Uploading & Saving...' : 'Save & Upload Documents'}
                 </Button>
               </form>
             </div>
