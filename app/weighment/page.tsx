@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Navigation from '@/components/Navigation'
 import { Plus, Upload, Calendar, Trash2, FileText, CheckCircle, X, Truck, Image as ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { supabase } from '@/lib/supabase'
 
 interface WeighmentRecord {
   id: string
@@ -19,28 +20,12 @@ interface WeighmentRecord {
   photoUrl?: string
 }
 
-// User data integrated directly from the provided Tata Steel West Bokaro slip
-const mockRecords: WeighmentRecord[] = [
-  {
-    id: '1',
-    date: '2026-07-11',
-    challanNo: '87 (Card: 899)',
-    customer: 'M/S BLACK DIAMOND',
-    truckNo: 'JH10CS-0138',
-    material: 'Explosive',
-    grossWeight: 30940,
-    tareWeight: 14720,
-    netWeight: 16220,
-    photoName: 'WhatsApp Image 2026-07-11 at 3.23.49 PM.jpeg'
-  }
-]
-
-function WeighmentForm({ onSubmit, onCancel }: { onSubmit: (data: any, file: File | null) => void, onCancel: () => void }) {
+function WeighmentForm({ onSubmit, onCancel, isSubmitting }: { onSubmit: (data: any, file: File | null) => void, onCancel: () => void, isSubmitting: boolean }) {
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     challanNo: '',
     truckNo: '',
-    customer: 'M/S BLACK DIAMOND', // Default as per slip
+    customer: 'M/S BLACK DIAMOND',
     material: 'Explosive',
     grossWeight: '',
     tareWeight: '',
@@ -50,18 +35,6 @@ function WeighmentForm({ onSubmit, onCancel }: { onSubmit: (data: any, file: Fil
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     onSubmit(formData, slipFile)
-    
-    // Reset Form
-    setFormData({
-      date: new Date().toISOString().split('T')[0],
-      challanNo: '',
-      truckNo: '',
-      customer: 'M/S BLACK DIAMOND',
-      material: 'Explosive',
-      grossWeight: '',
-      tareWeight: '',
-    })
-    setSlipFile(null)
   }
 
   const netWeight = formData.grossWeight && formData.tareWeight 
@@ -71,7 +44,6 @@ function WeighmentForm({ onSubmit, onCancel }: { onSubmit: (data: any, file: Fil
   return (
     <div className="p-2">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Form strictly follows 2-column grid layout */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-semibold text-gray-900 mb-1.5">Date</label>
@@ -171,41 +143,17 @@ function WeighmentForm({ onSubmit, onCancel }: { onSubmit: (data: any, file: Fil
           </div>
         )}
 
-        <div className={`border-2 border-dashed rounded-lg p-5 text-center transition-colors cursor-pointer mt-4 bg-gray-50 ${slipFile ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300 hover:border-blue-500'}`}>
-          <input 
-            type="file" 
-            id="slip-upload" 
-            className="hidden" 
-            accept="image/*,.pdf"
-            onChange={(e) => setSlipFile(e.target.files ? e.target.files[0] : null)}
-          />
-          <label htmlFor="slip-upload" className="cursor-pointer flex flex-col items-center justify-center w-full h-full">
-            {slipFile ? (
-              <>
-                <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                <p className="text-sm font-bold text-emerald-700">{slipFile.name}</p>
-                <p className="text-xs text-emerald-600 mt-1">Click to change slip image</p>
-              </>
-            ) : (
-              <>
-                <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm font-semibold text-gray-900">Upload Tata Steel Slip Photo</p>
-                <p className="text-xs text-gray-500 mt-1">Drag and drop or click to select</p>
-              </>
-            )}
-          </label>
-        </div>
-
         <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100">
           <button
             type="button"
             onClick={onCancel}
-            className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold rounded-lg transition-colors flex-1"
+            disabled={isSubmitting}
+            className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold rounded-lg transition-colors flex-1 disabled:opacity-50"
           >
             Cancel
           </button>
-          <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex-1">
-            Save Entry
+          <Button type="submit" disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex-1 disabled:opacity-50">
+            {isSubmitting ? 'Saving...' : 'Save Entry'}
           </Button>
         </div>
       </form>
@@ -214,39 +162,99 @@ function WeighmentForm({ onSubmit, onCancel }: { onSubmit: (data: any, file: Fil
 }
 
 export default function WeighmentPage() {
-  const [records, setRecords] = useState(mockRecords)
+  const [records, setRecords] = useState<WeighmentRecord[]>([])
   const [isFormModalOpen, setIsFormModalOpen] = useState(false)
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
-  const handleNewEntry = (data: any, file: File | null) => {
-    const newRecord: WeighmentRecord = {
-      id: Math.random().toString(36).substr(2, 9),
-      date: data.date,
-      challanNo: data.challanNo,
-      customer: data.customer,
-      truckNo: data.truckNo,
-      material: data.material,
-      grossWeight: parseFloat(data.grossWeight),
-      tareWeight: parseFloat(data.tareWeight),
-      netWeight: parseFloat(data.grossWeight) - parseFloat(data.tareWeight),
-      photoName: file?.name,
-      photoUrl: file ? URL.createObjectURL(file) : undefined
+  // Fetch data from Supabase
+  const fetchRecords = async () => {
+    setIsLoading(true)
+    const { data, error } = await supabase
+      .from('weighment_slips')
+      .select('*')
+      .order('date', { ascending: false })
+
+    if (error) {
+      console.error("Error fetching data:", error)
+      alert("Failed to load records from database.")
+    } else if (data) {
+      const formattedData: WeighmentRecord[] = data.map((item: any) => ({
+        id: item.id,
+        date: item.date,
+        challanNo: item.challan_no,
+        customer: item.customer,
+        truckNo: item.truck_no,
+        material: item.material,
+        grossWeight: item.gross_weight,
+        tareWeight: item.tare_weight,
+        netWeight: item.net_weight,
+        photoUrl: item.photo_url || undefined
+      }))
+      setRecords(formattedData)
     }
-    setRecords([newRecord, ...records])
+    setIsLoading(false)
+  }
+
+  useEffect(() => {
+    fetchRecords()
+  }, [])
+
+  // Save new entry to Supabase
+  const handleNewEntry = async (data: any, file: File | null) => {
+    setIsSubmitting(true)
+    
+    const netWeight = parseFloat(data.grossWeight) - parseFloat(data.tareWeight)
+
+    const { error } = await supabase
+      .from('weighment_slips')
+      .insert([
+        {
+          date: data.date,
+          challan_no: data.challanNo,
+          truck_no: data.truckNo,
+          customer: data.customer,
+          material: data.material,
+          gross_weight: parseFloat(data.grossWeight),
+          tare_weight: parseFloat(data.tareWeight),
+          net_weight: netWeight,
+          // photo_url is skipped for now as requested
+        }
+      ])
+
+    if (error) {
+      console.error("Insert error:", error)
+      alert("Error saving record: " + error.message)
+      setIsSubmitting(false)
+      return
+    }
+
+    await fetchRecords() // Refresh the list from DB
+    setIsSubmitting(false)
     setIsFormModalOpen(false)
   }
 
-  const handleDeleteRecord = (id: string, e?: React.MouseEvent) => {
-    if(e) e.stopPropagation() // Prevents the card click event from firing
-    if(confirm("Are you sure you want to delete this weighment entry?")) {
-      setRecords(prev => prev.filter(record => record.id !== id))
-      if (selectedRecordId === id) setSelectedRecordId(null)
+  // Delete entry from Supabase
+  const handleDeleteRecord = async (id: string, e?: React.MouseEvent) => {
+    if(e) e.stopPropagation()
+    if(confirm("Are you sure you want to delete this weighment entry permanently?")) {
+      const { error } = await supabase
+        .from('weighment_slips')
+        .delete()
+        .eq('id', id)
+
+      if (error) {
+        alert("Error deleting record: " + error.message)
+      } else {
+        setRecords(prev => prev.filter(record => record.id !== id))
+        if (selectedRecordId === id) setSelectedRecordId(null)
+      }
     }
   }
 
   const selectedRecord = records.find(r => r.id === selectedRecordId)
 
-  // Group records by date
   const recordsByDate = records.reduce((acc, record) => {
     if (!acc[record.date]) acc[record.date] = []
     acc[record.date].push(record)
@@ -258,7 +266,6 @@ export default function WeighmentPage() {
       <Navigation />
       
       <main className="pt-4 md:pt-6 px-4 md:px-8 pb-28">
-        {/* Header with Add Button */}
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Weighment Slips</h1>
@@ -273,81 +280,82 @@ export default function WeighmentPage() {
           </Button>
         </div>
 
-        {/* Grid View (Cards) - Fixed strictly as 2x2 Grid per date group */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {Object.entries(recordsByDate).length > 0 ? (
-            Object.entries(recordsByDate).map(([date, dateRecords]) => (
-              <div key={date} className="bg-white border-2 border-gray-200 rounded-xl p-5 shadow-sm">
-                <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-5 h-5 text-blue-600" />
-                    <h3 className="font-bold text-gray-900">
-                      {new Date(date).toLocaleDateString('en-IN', { weekday: 'long', month: 'short', day: 'numeric' })}
-                    </h3>
-                  </div>
-                  <span className="text-xs font-semibold bg-gray-100 px-2 py-1 rounded-md text-gray-600">
-                    {dateRecords.length} Entries
-                  </span>
-                </div>
-
-                <div className="space-y-4">
-                  {dateRecords.map((record) => (
-                    <div 
-                      key={record.id} 
-                      onClick={() => setSelectedRecordId(record.id)}
-                      className="p-4 bg-gray-50 border border-gray-200 rounded-xl relative group hover:border-blue-400 hover:shadow-md transition-all cursor-pointer"
-                    >
-                      <div className="pr-8">
-                        {/* Ch No & Truck */}
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <p className="text-xs font-bold text-gray-500 uppercase">Challan No</p>
-                            <p className="text-base font-bold text-gray-900">{record.challanNo}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xs font-bold text-gray-500 uppercase">Truck No</p>
-                            <p className="text-sm font-bold text-gray-900">{record.truckNo}</p>
-                          </div>
-                        </div>
-
-                        <p className="text-xs text-gray-600 mb-3">{record.customer} • {record.material}</p>
-                        
-                        {/* Final Qty Highlight */}
-                        <div className="flex items-center justify-between mt-2 pt-3 border-t border-gray-200">
-                          <span className="text-sm font-bold text-gray-700 flex items-center gap-1">
-                            {record.photoName ? <FileText className="w-4 h-4 text-emerald-600" /> : <FileText className="w-4 h-4 text-gray-400" />}
-                            Final Qty
-                          </span>
-                          <span className="text-lg font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg">
-                            {record.netWeight.toLocaleString('en-IN')} Kgs
-                          </span>
-                        </div>
-                      </div>
-                      
-                      {/* Delete Button */}
-                      <button 
-                        onClick={(e) => handleDeleteRecord(record.id, e)}
-                        className="absolute top-3 right-3 text-red-500 hover:bg-red-100 p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="Delete Record"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+        {isLoading ? (
+          <div className="flex justify-center items-center py-20 text-gray-500">
+            Loading database records...
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {Object.entries(recordsByDate).length > 0 ? (
+              Object.entries(recordsByDate).map(([date, dateRecords]) => (
+                <div key={date} className="bg-white border-2 border-gray-200 rounded-xl p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-5 h-5 text-blue-600" />
+                      <h3 className="font-bold text-gray-900">
+                        {new Date(date).toLocaleDateString('en-IN', { weekday: 'long', month: 'short', day: 'numeric' })}
+                      </h3>
                     </div>
-                  ))}
+                    <span className="text-xs font-semibold bg-gray-100 px-2 py-1 rounded-md text-gray-600">
+                      {dateRecords.length} Entries
+                    </span>
+                  </div>
+
+                  <div className="space-y-4">
+                    {dateRecords.map((record) => (
+                      <div 
+                        key={record.id} 
+                        onClick={() => setSelectedRecordId(record.id)}
+                        className="p-4 bg-gray-50 border border-gray-200 rounded-xl relative group hover:border-blue-400 hover:shadow-md transition-all cursor-pointer"
+                      >
+                        <div className="pr-8">
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <p className="text-xs font-bold text-gray-500 uppercase">Challan No</p>
+                              <p className="text-base font-bold text-gray-900">{record.challanNo}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs font-bold text-gray-500 uppercase">Truck No</p>
+                              <p className="text-sm font-bold text-gray-900">{record.truckNo}</p>
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-gray-600 mb-3">{record.customer} • {record.material}</p>
+                          
+                          <div className="flex items-center justify-between mt-2 pt-3 border-t border-gray-200">
+                            <span className="text-sm font-bold text-gray-700 flex items-center gap-1">
+                              {record.photoUrl ? <FileText className="w-4 h-4 text-emerald-600" /> : <FileText className="w-4 h-4 text-gray-400" />}
+                              Final Qty
+                            </span>
+                            <span className="text-lg font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg">
+                              {record.netWeight.toLocaleString('en-IN')} Kgs
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <button 
+                          onClick={(e) => handleDeleteRecord(record.id, e)}
+                          className="absolute top-3 right-3 text-red-500 hover:bg-red-100 p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Delete Record"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              ))
+            ) : (
+              <div className="col-span-full text-center py-16 border-2 border-dashed border-gray-200 rounded-xl text-gray-500">
+                <Truck className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                <p className="font-semibold text-lg text-gray-700">No entries yet</p>
+                <p className="text-sm mt-1">Click on "Add New Entry" to get started.</p>
               </div>
-            ))
-          ) : (
-            <div className="col-span-full text-center py-16 border-2 border-dashed border-gray-200 rounded-xl text-gray-500">
-              <Truck className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-              <p className="font-semibold text-lg text-gray-700">No entries yet</p>
-              <p className="text-sm mt-1">Click on "Add New Entry" to get started.</p>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </main>
 
-      {/* Add New Entry Form Modal */}
       {isFormModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative">
@@ -366,13 +374,13 @@ export default function WeighmentPage() {
               <WeighmentForm 
                 onSubmit={handleNewEntry} 
                 onCancel={() => setIsFormModalOpen(false)} 
+                isSubmitting={isSubmitting}
               />
             </div>
           </div>
         </div>
       )}
 
-      {/* Detail & Image View Modal */}
       {selectedRecord && (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col md:flex-row relative">
@@ -383,7 +391,6 @@ export default function WeighmentPage() {
               <X className="w-6 h-6" />
             </button>
 
-            {/* Image Preview Section */}
             <div className="w-full md:w-1/2 bg-gray-100 border-r border-gray-200 min-h-[250px] md:min-h-[500px] flex items-center justify-center p-4">
               {selectedRecord.photoUrl ? (
                 <img 
@@ -391,13 +398,6 @@ export default function WeighmentPage() {
                   alt="Weighment Slip" 
                   className="max-w-full max-h-[400px] md:max-h-[80vh] object-contain rounded-lg shadow-sm"
                 />
-              ) : selectedRecord.photoName ? (
-                <div className="text-center p-6 bg-white rounded-xl shadow-sm border border-gray-200">
-                  <ImageIcon className="w-16 h-16 text-blue-400 mx-auto mb-3" />
-                  <p className="text-gray-800 font-semibold mb-1">{selectedRecord.photoName}</p>
-                  <p className="text-xs text-gray-500">Preview not available for mock/default data.</p>
-                  <p className="text-xs text-gray-500 mt-1">Upload a new entry to see real previews.</p>
-                </div>
               ) : (
                 <div className="text-center">
                   <FileText className="w-16 h-16 text-gray-300 mx-auto mb-2" />
@@ -406,7 +406,6 @@ export default function WeighmentPage() {
               )}
             </div>
 
-            {/* Details Section */}
             <div className="w-full md:w-1/2 bg-white p-6 md:p-8 overflow-y-auto">
               <h2 className="text-2xl font-bold text-gray-900 mb-6 border-b border-gray-100 pb-4">Slip Details</h2>
 
