@@ -15,7 +15,7 @@ export default function LoginPage() {
       provider: 'google',
       options: {
         // Successful login ke baad yahan wapas aayega
-        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}` : 'http://localhost:3000'
+        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}` : 'https://black-diamond-puce.vercel.app'
       }
     })
 
