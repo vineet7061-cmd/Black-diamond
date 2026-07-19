@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: 'Logistics Fleet Management System',
   description: 'Comprehensive mobile application for fleet fitness, logistics, delivery, and billing management',
   generator: 'v0.app',
+  manifest: '/manifest.json', // YE LINE ADD KARNI HAI
   icons: {
     icon: [
       {
