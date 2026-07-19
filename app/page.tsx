@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Navigation from '@/components/Navigation'
-import { Plus, AlertTriangle, Clock, CheckCircle, AlertCircle, X, UploadCloud, User, FileText, IdCard, ArrowLeft, Image as ImageIcon, Trash2, Edit, ShieldCheck, Wind, FileSignature, Eye } from 'lucide-react'
+import { Plus, AlertTriangle, Clock, CheckCircle, AlertCircle, X, UploadCloud, User, FileText, IdCard, ArrowLeft, Image as ImageIcon, Trash2, Edit, ShieldCheck, Wind, FileSignature, Eye, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 
@@ -36,8 +36,9 @@ interface Vehicle {
 export default function Page() {
   const router = useRouter()
   
-  // Security State
+  // Security & Profile State
   const [isAuthLoading, setIsAuthLoading] = useState(true)
+  const [isProfileOpen, setIsProfileOpen] = useState(false)
 
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [filter, setFilter] = useState<'all' | 'LMV' | 'HMV'>('all')
@@ -85,22 +86,25 @@ export default function Page() {
   const [existingVehPUC, setExistingVehPUC] = useState<string | null>(null)
   const [existingVehPermit, setExistingVehPermit] = useState<string | null>(null)
 
-  // ================= SECURITY ROUTE PROTECTION =================
+  // ================= SECURITY ROUTE PROTECTION & LOGOUT =================
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session }, error } = await supabase.auth.getSession()
       
       if (error || !session) {
-        // Agar session nahi hai, toh turant login page pe bhej do
         router.push('/login')
       } else {
-        // Agar login hai, toh dashboard dikhao
         setIsAuthLoading(false)
       }
     }
 
     checkAuth()
   }, [router])
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
 
   // Fetch Data from Supabase
   const fetchVehicles = async () => {
@@ -288,7 +292,6 @@ export default function Page() {
     
     setIsUploading(true) 
 
-    // If new file is selected, upload it. Otherwise, keep the existing (or null if deleted)
     const photoUrl = driverPhoto ? await uploadToCloudinary(driverPhoto) : existingDriverPhoto
     const dlUrl = driverDL ? await uploadToCloudinary(driverDL) : existingDriverDL
     const gatePassUrl = driverGatePass ? await uploadToCloudinary(driverGatePass) : existingDriverGatePass
@@ -359,10 +362,9 @@ export default function Page() {
     }
   }
 
-  // UPDATED FILE UPLOAD INPUT COMPONENT
+  // FILE UPLOAD INPUT COMPONENT
   const FileUploadInput = ({ label, icon: Icon, file, setFile, existingUrl, onRemoveExisting }: any) => {
     
-    // Case 1: User has selected a new file (not yet saved)
     if (file) {
       return (
         <div className="border-2 border-dashed border-emerald-300 rounded-lg p-3 text-center bg-emerald-50 relative flex flex-col items-center justify-center min-h-[90px]">
@@ -381,7 +383,6 @@ export default function Page() {
       )
     }
 
-    // Case 2: Document is already uploaded (from DB)
     if (existingUrl) {
       return (
         <div className="border border-gray-200 rounded-lg p-3 text-center bg-gray-50 flex flex-col items-center justify-between min-h-[90px]">
@@ -410,7 +411,6 @@ export default function Page() {
       )
     }
 
-    // Case 3: Empty state (Ready to upload)
     return (
       <div className="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center bg-gray-50 hover:bg-gray-100 transition-colors flex flex-col items-center justify-center min-h-[90px]">
         <input 
@@ -440,15 +440,41 @@ export default function Page() {
     )
   }
 
+  // ================= PROFILE & LOGOUT DROPDOWN COMPONENT =================
+  const ProfileDropdown = () => (
+    <div className="relative z-50">
+      <button 
+        onClick={() => setIsProfileOpen(!isProfileOpen)} 
+        className="bg-blue-50 border border-blue-200 hover:bg-blue-100 p-2.5 rounded-full transition-colors flex items-center justify-center"
+        title="Account Settings"
+      >
+        <User className="w-5 h-5 text-blue-700" />
+      </button>
+      {isProfileOpen && (
+        <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-lg py-2">
+          <button 
+            onClick={handleLogout}
+            className="w-full text-left px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
+          >
+            <LogOut className="w-4 h-4" /> Secure Logout
+          </button>
+        </div>
+      )}
+    </div>
+  )
+
   // ================= RENDER DRIVER PROFILE PAGE =================
   if (viewingDriverId && selectedDriver) {
     return (
       <div className="min-h-screen bg-white">
         <Navigation />
         <main className="pt-4 md:pt-6 px-4 md:px-8 pb-28">
-          <Button variant="ghost" onClick={() => setViewingDriverId(null)} className="mb-6 -ml-2 text-gray-600">
-            <ArrowLeft className="w-5 h-5 mr-2" /> Back to Vehicle
-          </Button>
+          <div className="flex justify-between items-center mb-6">
+            <Button variant="ghost" onClick={() => setViewingDriverId(null)} className="-ml-2 text-gray-600">
+              <ArrowLeft className="w-5 h-5 mr-2" /> Back to Vehicle
+            </Button>
+            <ProfileDropdown />
+          </div>
 
           <div className="bg-white border-2 border-gray-200 rounded-xl p-6 md:p-8 max-w-2xl mx-auto shadow-sm">
             <div className="flex flex-col md:flex-row items-center gap-6 mb-8 border-b border-gray-100 pb-8">
@@ -532,18 +558,21 @@ export default function Page() {
       <div className="min-h-screen bg-white">
         <Navigation />
         <main className="pt-4 md:pt-6 px-4 md:px-8 pb-28">
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex justify-between items-center mb-6">
             <Button variant="ghost" onClick={() => setSelectedVehicleId(null)} className="-ml-2 text-gray-600">
               <ArrowLeft className="w-5 h-5 mr-2" /> Back to Dashboard
             </Button>
             
-            <Button 
-              variant="ghost" 
-              onClick={() => handleDeleteVehicle(selectedVehicle.id)} 
-              className="text-red-600 hover:text-red-700 hover:bg-red-50 bg-red-50/50"
-            >
-              <Trash2 className="w-4 h-4 mr-2" /> Delete Vehicle
-            </Button>
+            <div className="flex items-center gap-4">
+              <Button 
+                variant="ghost" 
+                onClick={() => handleDeleteVehicle(selectedVehicle.id)} 
+                className="text-red-600 hover:text-red-700 hover:bg-red-50 bg-red-50/50"
+              >
+                <Trash2 className="w-4 h-4 mr-2" /> Delete Vehicle
+              </Button>
+              <ProfileDropdown />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -708,6 +737,7 @@ export default function Page() {
           </div>
         </main>
 
+        {/* Modals from previous code */}
         {/* Add/Edit Driver Modal */}
         {isDriverModalOpen && (
           <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
@@ -839,9 +869,14 @@ export default function Page() {
     <div className="min-h-screen bg-white flex flex-col">
       <Navigation />
       <main className="pt-4 md:pt-6 px-4 md:px-8 pb-28 flex-grow flex flex-col">
-        <div className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Vehicle fitness</h1>
-          <p className="text-gray-600">Monitor vehicle status, inspections, and maintenance</p>
+        
+        {/* NEW HEADER WITH PROFILE ICON */}
+        <div className="flex justify-between items-start mb-8">
+          <div>
+            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Vehicle fitness</h1>
+            <p className="text-gray-600">Monitor vehicle status, inspections, and maintenance</p>
+          </div>
+          <ProfileDropdown />
         </div>
 
         {isLoading ? (
