@@ -132,6 +132,26 @@ function WeighmentForm({ onSubmit, onCancel, isSubmitting }: { onSubmit: (data: 
               required
             />
           </div>
+
+          {/* New Cloudinary Upload Input */}
+          <div className="col-span-1 md:col-span-2 mt-2">
+            <label className="block text-sm font-semibold text-gray-900 mb-1.5">Upload Weighment Slip (Photo)</label>
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50 hover:bg-gray-100 transition-colors">
+              <input
+                type="file"
+                id="slip-upload"
+                accept="image/*,.pdf"
+                className="hidden"
+                onChange={(e) => setSlipFile(e.target.files ? e.target.files[0] : null)}
+              />
+              <label htmlFor="slip-upload" className="cursor-pointer flex flex-col items-center gap-2">
+                <Upload className={`w-8 h-8 ${slipFile ? 'text-emerald-600' : 'text-blue-600'}`} />
+                <span className="text-sm font-semibold text-gray-700">
+                  {slipFile ? slipFile.name : 'Click to upload slip photo or PDF'}
+                </span>
+              </label>
+            </div>
+          </div>
         </div>
 
         {netWeight > 0 && (
@@ -153,7 +173,7 @@ function WeighmentForm({ onSubmit, onCancel, isSubmitting }: { onSubmit: (data: 
             Cancel
           </button>
           <Button type="submit" disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex-1 disabled:opacity-50">
-            {isSubmitting ? 'Saving...' : 'Save Entry'}
+            {isSubmitting ? 'Uploading & Saving...' : 'Save Entry'}
           </Button>
         </div>
       </form>
@@ -201,9 +221,37 @@ export default function WeighmentPage() {
     fetchRecords()
   }, [])
 
+  // Cloudinary Upload Function
+  const uploadToCloudinary = async (file: File | null) => {
+    if (!file) return null;
+  
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || ""); 
+    formData.append("cloud_name", process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "");
+  
+    try {
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+      const data = await response.json();
+      return data.secure_url; 
+    } catch (error) {
+      console.error("Image upload failed:", error);
+      return null;
+    }
+  };
+
   // Save new entry to Supabase
   const handleNewEntry = async (data: any, file: File | null) => {
     setIsSubmitting(true)
+    
+    // Upload slip to Cloudinary first
+    const photoUrl = await uploadToCloudinary(file)
     
     const netWeight = parseFloat(data.grossWeight) - parseFloat(data.tareWeight)
 
@@ -219,7 +267,7 @@ export default function WeighmentPage() {
           gross_weight: parseFloat(data.grossWeight),
           tare_weight: parseFloat(data.tareWeight),
           net_weight: netWeight,
-          // photo_url is skipped for now as requested
+          photo_url: photoUrl // Now saving the Cloudinary URL
         }
       ])
 

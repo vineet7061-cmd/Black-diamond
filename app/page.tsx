@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Navigation from '@/components/Navigation'
-import { Plus, AlertTriangle, Clock, CheckCircle, AlertCircle, X, UploadCloud, User, FileText, IdCard, ArrowLeft, Image as ImageIcon, Trash2, Edit, ShieldCheck, Wind, FileSignature } from 'lucide-react'
+import { Plus, AlertTriangle, Clock, CheckCircle, AlertCircle, X, UploadCloud, User, FileText, IdCard, ArrowLeft, Image as ImageIcon, Trash2, Edit, ShieldCheck, Wind, FileSignature, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 
@@ -36,7 +36,7 @@ export default function Page() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [filter, setFilter] = useState<'all' | 'LMV' | 'HMV'>('all')
   const [isLoading, setIsLoading] = useState(true)
-  const [isUploading, setIsUploading] = useState(false) // New state for tracking upload status
+  const [isUploading, setIsUploading] = useState(false)
   
   // Navigation States
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null)
@@ -53,7 +53,7 @@ export default function Page() {
   const [lastCheckedDate, setLastCheckedDate] = useState('')
   const [newCheckedDate, setNewCheckedDate] = useState('')
 
-  // Add/Edit Driver Form State
+  // Add/Edit Driver Form State (New Files)
   const [driverName, setDriverName] = useState('')
   const [driverContact, setDriverContact] = useState('')
   const [driverPhoto, setDriverPhoto] = useState<File | null>(null)
@@ -61,11 +61,23 @@ export default function Page() {
   const [driverGatePass, setDriverGatePass] = useState<File | null>(null)
   const [driverTraining, setDriverTraining] = useState<File | null>(null)
 
-  // Vehicle Docs Form State
+  // Driver Existing URL State
+  const [existingDriverPhoto, setExistingDriverPhoto] = useState<string | null>(null)
+  const [existingDriverDL, setExistingDriverDL] = useState<string | null>(null)
+  const [existingDriverGatePass, setExistingDriverGatePass] = useState<string | null>(null)
+  const [existingDriverTraining, setExistingDriverTraining] = useState<string | null>(null)
+
+  // Vehicle Docs Form State (New Files)
   const [vehRC, setVehRC] = useState<File | null>(null)
   const [vehInsurance, setVehInsurance] = useState<File | null>(null)
   const [vehPUC, setVehPUC] = useState<File | null>(null)
   const [vehPermit, setVehPermit] = useState<File | null>(null)
+
+  // Vehicle Docs Existing URL State
+  const [existingVehRC, setExistingVehRC] = useState<string | null>(null)
+  const [existingVehInsurance, setExistingVehInsurance] = useState<string | null>(null)
+  const [existingVehPUC, setExistingVehPUC] = useState<string | null>(null)
+  const [existingVehPermit, setExistingVehPermit] = useState<string | null>(null)
 
   // Fetch Data from Supabase
   const fetchVehicles = async () => {
@@ -144,7 +156,7 @@ export default function Page() {
         }
       );
       const data = await response.json();
-      return data.secure_url; // Returns the uploaded image URL
+      return data.secure_url; 
     } catch (error) {
       console.error("Image upload failed:", error);
       return null;
@@ -167,7 +179,7 @@ export default function Page() {
     const { error } = await supabase.from('vehicles').update({ status: nextStatus }).eq('id', id)
     if(error) {
       alert("Status update failed in database.")
-      fetchVehicles() // Revert on fail
+      fetchVehicles() 
     }
   }
 
@@ -209,9 +221,17 @@ export default function Page() {
     if (editMode && selectedVehicle?.driver) {
       setDriverName(selectedVehicle.driver.name)
       setDriverContact(selectedVehicle.driver.contact)
+      setExistingDriverPhoto(selectedVehicle.driver.photoName || null)
+      setExistingDriverDL(selectedVehicle.driver.licenseName || null)
+      setExistingDriverGatePass(selectedVehicle.driver.gatePassName || null)
+      setExistingDriverTraining(selectedVehicle.driver.trainingCardName || null)
     } else {
       setDriverName('')
       setDriverContact('')
+      setExistingDriverPhoto(null)
+      setExistingDriverDL(null)
+      setExistingDriverGatePass(null)
+      setExistingDriverTraining(null)
     }
     setDriverPhoto(null); setDriverDL(null); setDriverGatePass(null); setDriverTraining(null);
     setIsDriverModalOpen(true)
@@ -241,31 +261,29 @@ export default function Page() {
     e.preventDefault()
     if (!selectedVehicleId || !driverName) return
     
-    setIsUploading(true) // Start loading state
+    setIsUploading(true) 
 
-    // 1. Upload files to Cloudinary first
-    const photoUrl = await uploadToCloudinary(driverPhoto)
-    const dlUrl = await uploadToCloudinary(driverDL)
-    const gatePassUrl = await uploadToCloudinary(driverGatePass)
-    const trainingUrl = await uploadToCloudinary(driverTraining)
+    // If new file is selected, upload it. Otherwise, keep the existing (or null if deleted)
+    const photoUrl = driverPhoto ? await uploadToCloudinary(driverPhoto) : existingDriverPhoto
+    const dlUrl = driverDL ? await uploadToCloudinary(driverDL) : existingDriverDL
+    const gatePassUrl = driverGatePass ? await uploadToCloudinary(driverGatePass) : existingDriverGatePass
+    const trainingUrl = driverTraining ? await uploadToCloudinary(driverTraining) : existingDriverTraining
 
     const driverId = selectedVehicle?.driver ? selectedVehicle.driver.id : Math.random().toString(36).substr(2, 9)
 
-    // 2. Prepare data for Supabase (using URLs if uploaded, otherwise keep existing)
     const updateData = {
       driver_id: driverId,
       driver_name: driverName,
       driver_contact: driverContact,
-      driver_photo_name: photoUrl || selectedVehicle?.driver?.photoName || null,
-      driver_license_name: dlUrl || selectedVehicle?.driver?.licenseName || null,
-      driver_gate_pass_name: gatePassUrl || selectedVehicle?.driver?.gatePassName || null,
-      driver_training_card_name: trainingUrl || selectedVehicle?.driver?.trainingCardName || null,
+      driver_photo_name: photoUrl,
+      driver_license_name: dlUrl,
+      driver_gate_pass_name: gatePassUrl,
+      driver_training_card_name: trainingUrl,
     }
 
-    // 3. Save to database
     const { error } = await supabase.from('vehicles').update(updateData).eq('id', selectedVehicleId)
     
-    setIsUploading(false) // Stop loading state
+    setIsUploading(false) 
 
     if (!error) {
       await fetchVehicles()
@@ -276,6 +294,12 @@ export default function Page() {
   }
 
   const openVehicleDocsModal = () => {
+    if (selectedVehicle) {
+      setExistingVehRC(selectedVehicle.rcName || null)
+      setExistingVehInsurance(selectedVehicle.insuranceName || null)
+      setExistingVehPUC(selectedVehicle.pucName || null)
+      setExistingVehPermit(selectedVehicle.permitName || null)
+    }
     setVehRC(null); setVehInsurance(null); setVehPUC(null); setVehPermit(null);
     setIsVehicleDocsModalOpen(true)
   }
@@ -284,26 +308,23 @@ export default function Page() {
     e.preventDefault()
     if (!selectedVehicleId) return
 
-    setIsUploading(true) // Start loading state
+    setIsUploading(true) 
 
-    // 1. Upload files to Cloudinary
-    const rcUrl = await uploadToCloudinary(vehRC)
-    const insuranceUrl = await uploadToCloudinary(vehInsurance)
-    const pucUrl = await uploadToCloudinary(vehPUC)
-    const permitUrl = await uploadToCloudinary(vehPermit)
+    const rcUrl = vehRC ? await uploadToCloudinary(vehRC) : existingVehRC
+    const insuranceUrl = vehInsurance ? await uploadToCloudinary(vehInsurance) : existingVehInsurance
+    const pucUrl = vehPUC ? await uploadToCloudinary(vehPUC) : existingVehPUC
+    const permitUrl = vehPermit ? await uploadToCloudinary(vehPermit) : existingVehPermit
 
-    // 2. Prepare data for Supabase
     const updateData = {
-      rc_name: rcUrl || selectedVehicle?.rcName || null,
-      insurance_name: insuranceUrl || selectedVehicle?.insuranceName || null,
-      puc_name: pucUrl || selectedVehicle?.pucName || null,
-      permit_name: permitUrl || selectedVehicle?.permitName || null,
+      rc_name: rcUrl,
+      insurance_name: insuranceUrl,
+      puc_name: pucUrl,
+      permit_name: permitUrl,
     }
 
-    // 3. Save to database
     const { error } = await supabase.from('vehicles').update(updateData).eq('id', selectedVehicleId)
 
-    setIsUploading(false) // Stop loading state
+    setIsUploading(false) 
 
     if (!error) {
       await fetchVehicles()
@@ -313,22 +334,76 @@ export default function Page() {
     }
   }
 
-  const FileUploadInput = ({ label, icon: Icon, file, setFile }: any) => (
-    <div className="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center bg-gray-50 hover:bg-gray-100 transition-colors">
-      <input 
-        type="file" 
-        id={`upload-${label}`} 
-        className="hidden" 
-        onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)}
-      />
-      <label htmlFor={`upload-${label}`} className="cursor-pointer flex flex-col items-center gap-1">
-        <Icon className={`w-6 h-6 ${file ? 'text-emerald-600' : 'text-blue-600'}`} />
-        <span className="text-xs font-semibold text-gray-700 truncate w-full max-w-[120px]" title={file?.name}>
-          {file ? file.name : `Upload ${label}`}
-        </span>
-      </label>
-    </div>
-  )
+  // UPDATED FILE UPLOAD INPUT COMPONENT
+  const FileUploadInput = ({ label, icon: Icon, file, setFile, existingUrl, onRemoveExisting }: any) => {
+    
+    // Case 1: User has selected a new file (not yet saved)
+    if (file) {
+      return (
+        <div className="border-2 border-dashed border-emerald-300 rounded-lg p-3 text-center bg-emerald-50 relative flex flex-col items-center justify-center min-h-[90px]">
+          <Icon className="w-5 h-5 text-emerald-600 mb-1" />
+          <span className="text-[10px] font-semibold text-emerald-800 line-clamp-1 w-full" title={file.name}>
+            {file.name}
+          </span>
+          <button 
+            type="button" 
+            onClick={() => setFile(null)} 
+            className="text-[10px] text-red-500 hover:underline mt-1 font-semibold"
+          >
+            Cancel Selection
+          </button>
+        </div>
+      )
+    }
+
+    // Case 2: Document is already uploaded (from DB)
+    if (existingUrl) {
+      return (
+        <div className="border border-gray-200 rounded-lg p-3 text-center bg-gray-50 flex flex-col items-center justify-between min-h-[90px]">
+          <div className="flex flex-col items-center">
+            <CheckCircle className="w-5 h-5 text-emerald-500 mb-1" />
+            <span className="text-[10px] font-semibold text-gray-700">{label} Saved</span>
+          </div>
+          <div className="flex gap-2 w-full mt-2">
+            <a 
+              href={existingUrl} 
+              target="_blank" 
+              rel="noreferrer" 
+              className="flex-1 bg-blue-100 hover:bg-blue-200 text-blue-700 text-[10px] py-1 rounded flex items-center justify-center gap-1 font-bold transition-colors"
+            >
+              <Eye className="w-3 h-3" /> View
+            </a>
+            <button 
+              type="button" 
+              onClick={onRemoveExisting} 
+              className="flex-1 bg-red-100 hover:bg-red-200 text-red-700 text-[10px] py-1 rounded flex items-center justify-center gap-1 font-bold transition-colors"
+            >
+              <Trash2 className="w-3 h-3" /> Delete
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    // Case 3: Empty state (Ready to upload)
+    return (
+      <div className="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center bg-gray-50 hover:bg-gray-100 transition-colors flex flex-col items-center justify-center min-h-[90px]">
+        <input 
+          type="file" 
+          id={`upload-${label}`} 
+          accept="image/*,.pdf"
+          className="hidden" 
+          onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)}
+        />
+        <label htmlFor={`upload-${label}`} className="cursor-pointer flex flex-col items-center w-full">
+          <Icon className="w-5 h-5 text-blue-600 mb-1" />
+          <span className="text-[10px] font-semibold text-gray-700 leading-tight">
+            Upload {label}
+          </span>
+        </label>
+      </div>
+    )
+  }
 
   // ================= RENDER DRIVER PROFILE PAGE =================
   if (viewingDriverId && selectedDriver) {
@@ -622,10 +697,38 @@ export default function Page() {
                 <div className="mt-2">
                   <p className="block text-sm font-semibold text-gray-900 mb-3 border-b pb-2">Upload Documents (To Drive)</p>
                   <div className="grid grid-cols-2 gap-3">
-                    <FileUploadInput label="Photo" icon={ImageIcon} file={driverPhoto} setFile={setDriverPhoto} />
-                    <FileUploadInput label="Driving License" icon={IdCard} file={driverDL} setFile={setDriverDL} />
-                    <FileUploadInput label="Gate Pass" icon={FileText} file={driverGatePass} setFile={setDriverGatePass} />
-                    <FileUploadInput label="Training Card" icon={UploadCloud} file={driverTraining} setFile={setDriverTraining} />
+                    <FileUploadInput 
+                      label="Photo" 
+                      icon={ImageIcon} 
+                      file={driverPhoto} 
+                      setFile={setDriverPhoto} 
+                      existingUrl={existingDriverPhoto} 
+                      onRemoveExisting={() => setExistingDriverPhoto(null)} 
+                    />
+                    <FileUploadInput 
+                      label="DL" 
+                      icon={IdCard} 
+                      file={driverDL} 
+                      setFile={setDriverDL} 
+                      existingUrl={existingDriverDL} 
+                      onRemoveExisting={() => setExistingDriverDL(null)} 
+                    />
+                    <FileUploadInput 
+                      label="Gate Pass" 
+                      icon={FileText} 
+                      file={driverGatePass} 
+                      setFile={setDriverGatePass} 
+                      existingUrl={existingDriverGatePass} 
+                      onRemoveExisting={() => setExistingDriverGatePass(null)} 
+                    />
+                    <FileUploadInput 
+                      label="Training Card" 
+                      icon={UploadCloud} 
+                      file={driverTraining} 
+                      setFile={setDriverTraining} 
+                      existingUrl={existingDriverTraining} 
+                      onRemoveExisting={() => setExistingDriverTraining(null)} 
+                    />
                   </div>
                 </div>
 
@@ -650,10 +753,38 @@ export default function Page() {
                 <div className="mb-2">
                   <p className="block text-sm font-semibold text-gray-900 mb-3 border-b pb-2">Upload Required Papers</p>
                   <div className="grid grid-cols-2 gap-3">
-                    <FileUploadInput label="RC Book" icon={FileText} file={vehRC} setFile={setVehRC} />
-                    <FileUploadInput label="Insurance" icon={ShieldCheck} file={vehInsurance} setFile={setVehInsurance} />
-                    <FileUploadInput label="PUC" icon={Wind} file={vehPUC} setFile={setVehPUC} />
-                    <FileUploadInput label="Permit" icon={FileSignature} file={vehPermit} setFile={setVehPermit} />
+                    <FileUploadInput 
+                      label="RC Book" 
+                      icon={FileText} 
+                      file={vehRC} 
+                      setFile={setVehRC} 
+                      existingUrl={existingVehRC} 
+                      onRemoveExisting={() => setExistingVehRC(null)} 
+                    />
+                    <FileUploadInput 
+                      label="Insurance" 
+                      icon={ShieldCheck} 
+                      file={vehInsurance} 
+                      setFile={setVehInsurance} 
+                      existingUrl={existingVehInsurance} 
+                      onRemoveExisting={() => setExistingVehInsurance(null)} 
+                    />
+                    <FileUploadInput 
+                      label="PUC" 
+                      icon={Wind} 
+                      file={vehPUC} 
+                      setFile={setVehPUC} 
+                      existingUrl={existingVehPUC} 
+                      onRemoveExisting={() => setExistingVehPUC(null)} 
+                    />
+                    <FileUploadInput 
+                      label="Permit" 
+                      icon={FileSignature} 
+                      file={vehPermit} 
+                      setFile={setVehPermit} 
+                      existingUrl={existingVehPermit} 
+                      onRemoveExisting={() => setExistingVehPermit(null)} 
+                    />
                   </div>
                 </div>
 
