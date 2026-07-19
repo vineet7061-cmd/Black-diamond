@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Navigation from '@/components/Navigation'
 import { Plus, AlertTriangle, Clock, CheckCircle, AlertCircle, X, UploadCloud, User, FileText, IdCard, ArrowLeft, Image as ImageIcon, Trash2, Edit, ShieldCheck, Wind, FileSignature, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -33,6 +34,11 @@ interface Vehicle {
 }
 
 export default function Page() {
+  const router = useRouter()
+  
+  // Security State
+  const [isAuthLoading, setIsAuthLoading] = useState(true)
+
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [filter, setFilter] = useState<'all' | 'LMV' | 'HMV'>('all')
   const [isLoading, setIsLoading] = useState(true)
@@ -79,6 +85,23 @@ export default function Page() {
   const [existingVehPUC, setExistingVehPUC] = useState<string | null>(null)
   const [existingVehPermit, setExistingVehPermit] = useState<string | null>(null)
 
+  // ================= SECURITY ROUTE PROTECTION =================
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session }, error } = await supabase.auth.getSession()
+      
+      if (error || !session) {
+        // Agar session nahi hai, toh turant login page pe bhej do
+        router.push('/login')
+      } else {
+        // Agar login hai, toh dashboard dikhao
+        setIsAuthLoading(false)
+      }
+    }
+
+    checkAuth()
+  }, [router])
+
   // Fetch Data from Supabase
   const fetchVehicles = async () => {
     setIsLoading(true)
@@ -118,8 +141,10 @@ export default function Page() {
   }
 
   useEffect(() => {
-    fetchVehicles()
-  }, [])
+    if (!isAuthLoading) {
+      fetchVehicles()
+    }
+  }, [isAuthLoading])
 
   // Derived Data
   const filteredVehicles = filter === 'all' ? vehicles : vehicles.filter(v => v.type === filter)
@@ -401,6 +426,16 @@ export default function Page() {
             Upload {label}
           </span>
         </label>
+      </div>
+    )
+  }
+
+  // ================= VERIFYING ACCESS SCREEN =================
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+        <div className="text-gray-500 font-bold uppercase tracking-widest text-sm">Verifying Secure Access...</div>
       </div>
     )
   }
