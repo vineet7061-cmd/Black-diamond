@@ -65,7 +65,7 @@ export default function EcciAndSalePage() {
     fetchRecords()
   }, [])
 
-  // 2. Smart Excel File Upload
+  // 2. Smart Excel File Upload (Specifically Built for Your Format)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selectedMonth) {
       alert("Please select a Month from the top before uploading the file!")
@@ -85,45 +85,91 @@ export default function EcciAndSalePage() {
         const wb = XLSX.read(bstr, { type: 'binary' })
         const wsname = wb.SheetNames[0]
         const ws = wb.Sheets[wsname]
-        const data = XLSX.utils.sheet_to_json(ws)
+        
+        // Read as 2D array to manually find where the actual headers are (skipping top titles)
+        const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 })
+        
+        let headerRowIndex = -1
+        
+        // Find the exact row that has 'DATE' and 'CHALAN NO.'
+        for (let i = 0; i < rawData.length; i++) {
+          const row: any = rawData[i]
+          if (row && row.includes('DATE') && row.includes('CHALAN NO.')) {
+            headerRowIndex = i
+            break
+          }
+        }
 
-        // Date Parser
+        if (headerRowIndex === -1) {
+          alert("Could not find headers 'DATE' and 'CHALAN NO.' in the sheet. Please check your file.")
+          setIsUploading(false)
+          return
+        }
+
+        // Extract headers and normalize them (lowercase, remove spaces)
+        const headers = (rawData[headerRowIndex] as string[]).map(h => 
+          h ? h.toString().toLowerCase().replace(/[^a-z0-9]/g, '') : ''
+        )
+
+        // Only take rows below the headers
+        const dataRows = rawData.slice(headerRowIndex + 1)
+
+        // Date Parser for DD-MM-YYYY format or Excel serial numbers
         const parseDate = (val: any) => {
           if (!val) return null
           if (typeof val === 'number') {
             const date = new Date((val - (25567 + 2)) * 86400 * 1000)
             return date.toISOString().split('T')[0]
           }
-          return String(val).trim()
+          const strVal = String(val).trim()
+          const parts = strVal.split('-')
+          if (parts.length === 3 && parts[2].length === 4) {
+            return `${parts[2]}-${parts[1]}-${parts[0]}` // Convert DD-MM-YYYY to YYYY-MM-DD
+          }
+          return strVal
         }
 
-        // SMART KEY SCANNER: Removes all spaces, dots, and makes it lowercase
-        const normalizeKey = (key: string) => key.toString().toLowerCase().replace(/[^a-z0-9]/g, '')
+        // Amount Cleaner (Removes ₹, commas and spaces)
+        const cleanNumber = (val: any) => {
+          if (!val) return 0
+          const cleanStr = String(val).replace(/[^0-9.-]+/g, "")
+          return parseFloat(cleanStr) || 0
+        }
 
-        const rowsToInsert = data.map((rawRow: any) => {
-          const row: any = {}
-          Object.keys(rawRow).forEach(key => {
-            row[normalizeKey(key)] = rawRow[key]
+        const rowsToInsert: any[] = []
+
+        dataRows.forEach((rawRow: any) => {
+          if (!rawRow || rawRow.length === 0) return // Skip empty rows
+
+          const rowData: any = {}
+          headers.forEach((header, index) => {
+            if (header) rowData[header] = rawRow[index]
           })
 
-          return {
-            record_month: selectedMonth, // Tags the record with the selected month
-            date: parseDate(row['date']),
-            chalan_no: row['chalanno'] ? String(row['chalanno']).trim() : null,
-            bmd_no: row['bmdno'] ? String(row['bmdno']).trim() : null,
-            qty: Number(row['qty']) || 0,
-            amount: Number(row['amount']) || 0,
-            invoice_no: row['invoiceno'] ? String(row['invoiceno']).trim() : null,
-            ecci_date: parseDate(row['eccidate']),
-            ecci_no: row['eccino'] ? String(row['eccino']).trim() : null,
-            grn_no: row['grnno'] ? String(row['grnno']).trim() : null,
-            bill_upload_date: parseDate(row['billuploaddate']),
-            chalan_date: parseDate(row['chalandate']),
+          // Skip completely empty records or the "TOTAL =" row at the bottom
+          const dateStr = String(rowData['date'] || '').toLowerCase()
+          if (dateStr.includes('total') || (!rowData['date'] && !rowData['chalanno'] && !rowData['bmdno'])) {
+            return
           }
+
+          rowsToInsert.push({
+            record_month: selectedMonth, 
+            date: parseDate(rowData['date']),
+            chalan_no: rowData['chalanno'] ? String(rowData['chalanno']).trim() : null,
+            bmd_no: rowData['bmdno'] ? String(rowData['bmdno']).trim() : null,
+            qty: cleanNumber(rowData['qty']),
+            amount: cleanNumber(rowData['amount']),
+            invoice_no: rowData['invoiceno'] ? String(rowData['invoiceno']).trim() : null,
+            ecci_date: parseDate(rowData['eccidate']),
+            ecci_no: rowData['eccino'] ? String(rowData['eccino']).trim() : null,
+            grn_no: rowData['grnno'] ? String(rowData['grnno']).trim() : null,
+            bill_upload_date: parseDate(rowData['billuploaddate']),
+            chalan_date: parseDate(rowData['chalandate']),
+          })
         })
 
         if (rowsToInsert.length === 0) {
-          alert("No data found in Excel sheet.")
+          alert("No valid data rows found under the headers.")
           setIsUploading(false)
           return
         }
@@ -158,10 +204,10 @@ export default function EcciAndSalePage() {
     }
   }
 
-  // Strict Month Filtering (Only shows records uploaded for the selected month)
+  // Strict Month Filtering
   const filteredRecords = selectedMonth 
     ? records.filter(record => record.recordMonth === selectedMonth)
-    : [] // If no month is selected, show nothing
+    : [] 
 
   // Stats
   const totalAmount = filteredRecords.reduce((sum, r) => sum + r.amount, 0)
