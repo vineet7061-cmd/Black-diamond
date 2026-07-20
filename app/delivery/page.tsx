@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Navigation from '@/components/Navigation'
 import { Plus, FileText, Upload, Image as ImageIcon, Trash2, CheckCircle, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { supabase } from '@/lib/supabase'
 
 interface Challan {
   id: string
@@ -17,28 +18,7 @@ interface Challan {
   photoUrl?: string
 }
 
-const mockChallans: Challan[] = [
-  {
-    id: '1',
-    number: 'CHL-2024-00001',
-    date: '2024-12-10',
-    explosiveType: 'Dynamite Type A',
-    quantity: 500,
-    deliveryLocation: 'Delhi Construction Site',
-    status: 'delivered',
-  },
-  {
-    id: '2',
-    number: 'CHL-2024-00002',
-    date: '2024-12-09',
-    explosiveType: 'ANFO Mix',
-    quantity: 1000,
-    deliveryLocation: 'Mumbai Mining Site',
-    status: 'signed',
-  },
-]
-
-function ChallanForm({ onSubmit, onCancel }: { onSubmit: (data: any, file: File | null) => void, onCancel: () => void }) {
+function ChallanForm({ onSubmit, onCancel, isUploading }: { onSubmit: (data: any, file: File | null) => void, onCancel: () => void, isUploading: boolean }) {
   const [formData, setFormData] = useState({
     number: '',
     date: new Date().toISOString().split('T')[0],
@@ -52,17 +32,6 @@ function ChallanForm({ onSubmit, onCancel }: { onSubmit: (data: any, file: File 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     onSubmit(formData, slipFile)
-    
-    // Reset Form
-    setFormData({
-      number: '',
-      date: new Date().toISOString().split('T')[0],
-      explosiveType: '',
-      quantity: '',
-      deliveryLocation: '',
-      status: 'draft'
-    })
-    setSlipFile(null)
   }
 
   return (
@@ -148,7 +117,7 @@ function ChallanForm({ onSubmit, onCancel }: { onSubmit: (data: any, file: File 
           </div>
         </div>
 
-        {/* Photo Upload (Working State) */}
+        {/* Photo Upload */}
         <div className={`border-2 border-dashed rounded-lg p-5 text-center transition-colors cursor-pointer mt-4 bg-gray-50 ${slipFile ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300 hover:border-blue-500'}`}>
           <input 
             type="file" 
@@ -178,12 +147,13 @@ function ChallanForm({ onSubmit, onCancel }: { onSubmit: (data: any, file: File 
           <button
             type="button"
             onClick={onCancel}
-            className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold rounded-lg transition-colors flex-1"
+            disabled={isUploading}
+            className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold rounded-lg transition-colors flex-1 disabled:opacity-50"
           >
             Cancel
           </button>
-          <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex-1">
-            Create Challan
+          <Button type="submit" disabled={isUploading} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex-1 disabled:bg-blue-400">
+            {isUploading ? 'Saving...' : 'Create Challan'}
           </Button>
         </div>
       </form>
@@ -192,38 +162,121 @@ function ChallanForm({ onSubmit, onCancel }: { onSubmit: (data: any, file: File 
 }
 
 export default function DeliveryPage() {
-  const [challans, setChallans] = useState(mockChallans)
+  const [challans, setChallans] = useState<Challan[]>([])
+  const [isLoadingData, setIsLoadingData] = useState(true)
+  const [isUploading, setIsUploading] = useState(false)
   const [filterStatus, setFilterStatus] = useState<'all' | Challan['status']>('all')
   
   const [isFormModalOpen, setIsFormModalOpen] = useState(false)
   const [selectedChallanId, setSelectedChallanId] = useState<string | null>(null)
 
-  const handleNewChallan = (data: any, file: File | null) => {
-    const newChallan: Challan = {
-      id: Math.random().toString(36).substr(2, 9),
+  // Fetch Challans from Supabase
+  const fetchChallans = async () => {
+    setIsLoadingData(true)
+    const { data, error } = await supabase
+      .from('challans')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error("Error fetching challans:", error)
+    } else if (data) {
+      const formattedData: Challan[] = data.map((item: any) => ({
+        id: item.id,
+        number: item.number,
+        date: item.date,
+        explosiveType: item.explosive_type,
+        quantity: Number(item.quantity),
+        deliveryLocation: item.delivery_location,
+        status: item.status,
+        photoName: item.photo_name || undefined,
+        photoUrl: item.photo_url || undefined,
+      }))
+      setChallans(formattedData)
+    }
+    setIsLoadingData(false)
+  }
+
+  useEffect(() => {
+    fetchChallans()
+  }, [])
+
+  // Cloudinary Upload Logic
+  const uploadToCloudinary = async (file: File | null) => {
+    if (!file) return null;
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || ""); 
+    formData.append("cloud_name", process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "");
+  
+    try {
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
+        { method: "POST", body: formData }
+      );
+      const data = await response.json();
+      return data.secure_url; 
+    } catch (error) {
+      console.error("Image upload failed:", error);
+      return null;
+    }
+  };
+
+  const handleNewChallan = async (data: any, file: File | null) => {
+    setIsUploading(true)
+    
+    // Upload image if selected
+    let uploadedUrl = null
+    if (file) {
+      uploadedUrl = await uploadToCloudinary(file)
+    }
+
+    // Insert into Supabase
+    const { error } = await supabase.from('challans').insert([{
       number: data.number,
       date: data.date,
-      explosiveType: data.explosiveType,
+      explosive_type: data.explosiveType,
       quantity: parseFloat(data.quantity),
-      deliveryLocation: data.deliveryLocation,
+      delivery_location: data.deliveryLocation,
       status: data.status,
-      photoName: file?.name,
-      photoUrl: file ? URL.createObjectURL(file) : undefined
+      photo_name: file ? file.name : null,
+      photo_url: uploadedUrl
+    }])
+
+    setIsUploading(false)
+
+    if (error) {
+      alert("Error saving challan: " + error.message)
+    } else {
+      await fetchChallans() // Refresh list from DB
+      setIsFormModalOpen(false)
     }
-    setChallans([newChallan, ...challans])
-    setIsFormModalOpen(false)
   }
 
-  const handleDeleteChallan = (id: string, e?: React.MouseEvent) => {
+  const handleDeleteChallan = async (id: string, e?: React.MouseEvent) => {
     if(e) e.stopPropagation()
     if(confirm("Are you sure you want to delete this challan?")) {
-      setChallans(prev => prev.filter(c => c.id !== id))
-      if (selectedChallanId === id) setSelectedChallanId(null)
+      const { error } = await supabase.from('challans').delete().eq('id', id)
+      
+      if (!error) {
+        setChallans(prev => prev.filter(c => c.id !== id))
+        if (selectedChallanId === id) setSelectedChallanId(null)
+      } else {
+        alert("Failed to delete challan.")
+      }
     }
   }
 
-  const handleUpdateStatus = (id: string, newStatus: Challan['status']) => {
+  const handleUpdateStatus = async (id: string, newStatus: Challan['status']) => {
+    // Optimistic update
     setChallans(prev => prev.map(c => c.id === id ? { ...c, status: newStatus } : c))
+    
+    // DB Update
+    const { error } = await supabase.from('challans').update({ status: newStatus }).eq('id', id)
+    if (error) {
+      alert("Failed to update status in database.")
+      fetchChallans() // Revert back to DB state on fail
+    }
   }
 
   const filteredChallans = filterStatus === 'all' 
@@ -269,96 +322,105 @@ export default function DeliveryPage() {
           ))}
         </div>
 
-        {/* Stats - Strictly 2x2 Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-2 gap-4 mb-8">
-          <div className="bg-gray-50 border-2 border-gray-200 rounded-xl p-5">
-            <p className="text-sm font-medium text-gray-600 mb-1">Total Challans</p>
-            <p className="text-2xl font-bold text-gray-900">{challans.length}</p>
+        {isLoadingData ? (
+          <div className="flex justify-center items-center py-20 text-gray-500 font-medium">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
+            Loading Challan Database...
           </div>
-          <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-5">
-            <p className="text-sm font-medium text-amber-700 mb-1">Pending</p>
-            <p className="text-2xl font-bold text-amber-700">{challans.filter(c => c.status === 'pending').length}</p>
-          </div>
-          <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-5">
-            <p className="text-sm font-medium text-blue-700 mb-1">Signed</p>
-            <p className="text-2xl font-bold text-blue-700">{challans.filter(c => c.status === 'signed').length}</p>
-          </div>
-          <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-5">
-            <p className="text-sm font-medium text-emerald-700 mb-1">Delivered</p>
-            <p className="text-2xl font-bold text-emerald-700">{challans.filter(c => c.status === 'delivered').length}</p>
-          </div>
-        </div>
-
-        {/* Challans Grid - Strictly 2x2 Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {filteredChallans.map((challan) => {
-            const statusConfig = {
-              draft: { bg: 'bg-slate-50', border: 'border-slate-300', text: 'text-slate-600', label: 'Draft' },
-              pending: { bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-700', label: 'Pending Signature' },
-              signed: { bg: 'bg-blue-50', border: 'border-blue-300', text: 'text-blue-700', label: 'Signed' },
-              delivered: { bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-700', label: 'Delivered' },
-            }
-            const config = statusConfig[challan.status]
-
-            return (
-              <div 
-                key={challan.id} 
-                onClick={() => setSelectedChallanId(challan.id)}
-                className={`rounded-xl border-2 ${config.border} bg-white p-5 shadow-sm hover:shadow-md transition-all cursor-pointer relative group flex flex-col`}
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="font-bold text-gray-900 text-lg">{challan.number}</h3>
-                    <p className={`text-xs font-bold ${config.text} px-2 py-1 rounded-md ${config.bg} inline-block mt-1`}>
-                      {config.label}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-3 mb-4 flex-grow">
-                  <div className="flex justify-between items-center border-b border-gray-100 pb-2">
-                    <span className="text-sm text-gray-600">Date</span>
-                    <span className="text-sm font-semibold text-gray-900">{new Date(challan.date).toLocaleDateString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between items-center border-b border-gray-100 pb-2">
-                    <span className="text-sm text-gray-600">Explosive</span>
-                    <span className="text-sm font-semibold text-gray-900">{challan.explosiveType}</span>
-                  </div>
-                  <div className="flex justify-between items-center border-b border-gray-100 pb-2">
-                    <span className="text-sm text-gray-600">Quantity</span>
-                    <span className="text-sm font-bold text-blue-700">{challan.quantity.toLocaleString('en-IN')} Kgs</span>
-                  </div>
-                  <div className="flex justify-between items-start">
-                    <span className="text-sm text-gray-600">Location</span>
-                    <span className="text-sm font-semibold text-gray-900 text-right">{challan.deliveryLocation}</span>
-                  </div>
-                </div>
-
-                {challan.photoName && (
-                  <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-emerald-600 bg-emerald-50 p-2 rounded-lg border border-emerald-100">
-                    <FileText className="w-4 h-4" /> Document Attached
-                  </div>
-                )}
-
-                {/* Delete Button */}
-                <button 
-                  onClick={(e) => handleDeleteChallan(challan.id, e)}
-                  className="absolute top-4 right-4 text-red-500 hover:bg-red-100 p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="Delete Challan"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+        ) : (
+          <>
+            {/* Stats - Strictly 2x2 Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-2 gap-4 mb-8">
+              <div className="bg-gray-50 border-2 border-gray-200 rounded-xl p-5">
+                <p className="text-sm font-medium text-gray-600 mb-1">Total Challans</p>
+                <p className="text-2xl font-bold text-gray-900">{challans.length}</p>
               </div>
-            )
-          })}
-        </div>
+              <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-5">
+                <p className="text-sm font-medium text-amber-700 mb-1">Pending</p>
+                <p className="text-2xl font-bold text-amber-700">{challans.filter(c => c.status === 'pending').length}</p>
+              </div>
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-5">
+                <p className="text-sm font-medium text-blue-700 mb-1">Signed</p>
+                <p className="text-2xl font-bold text-blue-700">{challans.filter(c => c.status === 'signed').length}</p>
+              </div>
+              <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-5">
+                <p className="text-sm font-medium text-emerald-700 mb-1">Delivered</p>
+                <p className="text-2xl font-bold text-emerald-700">{challans.filter(c => c.status === 'delivered').length}</p>
+              </div>
+            </div>
 
-        {filteredChallans.length === 0 && (
-          <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl mt-6">
-            <FileText className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-            <p className="font-semibold text-lg text-gray-700">No challans found</p>
-            <p className="text-sm text-gray-500 mt-1">Try changing filters or add a new entry.</p>
-          </div>
+            {/* Challans Grid - Strictly 2x2 Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {filteredChallans.map((challan) => {
+                const statusConfig = {
+                  draft: { bg: 'bg-slate-50', border: 'border-slate-300', text: 'text-slate-600', label: 'Draft' },
+                  pending: { bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-700', label: 'Pending Signature' },
+                  signed: { bg: 'bg-blue-50', border: 'border-blue-300', text: 'text-blue-700', label: 'Signed' },
+                  delivered: { bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-700', label: 'Delivered' },
+                }
+                const config = statusConfig[challan.status]
+
+                return (
+                  <div 
+                    key={challan.id} 
+                    onClick={() => setSelectedChallanId(challan.id)}
+                    className={`rounded-xl border-2 ${config.border} bg-white p-5 shadow-sm hover:shadow-md transition-all cursor-pointer relative group flex flex-col`}
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h3 className="font-bold text-gray-900 text-lg">{challan.number}</h3>
+                        <p className={`text-xs font-bold ${config.text} px-2 py-1 rounded-md ${config.bg} inline-block mt-1`}>
+                          {config.label}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 mb-4 flex-grow">
+                      <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+                        <span className="text-sm text-gray-600">Date</span>
+                        <span className="text-sm font-semibold text-gray-900">{new Date(challan.date).toLocaleDateString('en-IN')}</span>
+                      </div>
+                      <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+                        <span className="text-sm text-gray-600">Explosive</span>
+                        <span className="text-sm font-semibold text-gray-900">{challan.explosiveType}</span>
+                      </div>
+                      <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+                        <span className="text-sm text-gray-600">Quantity</span>
+                        <span className="text-sm font-bold text-blue-700">{challan.quantity.toLocaleString('en-IN')} Kgs</span>
+                      </div>
+                      <div className="flex justify-between items-start">
+                        <span className="text-sm text-gray-600">Location</span>
+                        <span className="text-sm font-semibold text-gray-900 text-right">{challan.deliveryLocation}</span>
+                      </div>
+                    </div>
+
+                    {challan.photoName && (
+                      <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-emerald-600 bg-emerald-50 p-2 rounded-lg border border-emerald-100">
+                        <FileText className="w-4 h-4" /> Document Attached
+                      </div>
+                    )}
+
+                    {/* Delete Button */}
+                    <button 
+                      onClick={(e) => handleDeleteChallan(challan.id, e)}
+                      className="absolute top-4 right-4 text-red-500 hover:bg-red-100 p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Delete Challan"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+
+            {filteredChallans.length === 0 && (
+              <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl mt-6">
+                <FileText className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                <p className="font-semibold text-lg text-gray-700">No challans found</p>
+                <p className="text-sm text-gray-500 mt-1">Try changing filters or add a new entry.</p>
+              </div>
+            )}
+          </>
         )}
       </main>
 
@@ -380,7 +442,8 @@ export default function DeliveryPage() {
             <div className="p-2">
               <ChallanForm 
                 onSubmit={handleNewChallan} 
-                onCancel={() => setIsFormModalOpen(false)} 
+                onCancel={() => setIsFormModalOpen(false)}
+                isUploading={isUploading}
               />
             </div>
           </div>
@@ -410,7 +473,7 @@ export default function DeliveryPage() {
                 <div className="text-center p-6 bg-white rounded-xl shadow-sm border border-gray-200">
                   <ImageIcon className="w-16 h-16 text-blue-400 mx-auto mb-3" />
                   <p className="text-gray-800 font-semibold mb-1">{selectedChallan.photoName}</p>
-                  <p className="text-xs text-gray-500">Preview not available for mock data.</p>
+                  <a href={selectedChallan.photoUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline">Download/View Document</a>
                 </div>
               ) : (
                 <div className="text-center">
