@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import Navigation from '@/components/Navigation'
-import { FileSpreadsheet, Calendar, Upload, Trash2 } from 'lucide-react'
+import { FileSpreadsheet, Calendar, Upload, Trash2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 
 interface SaleRecord {
   id: string
+  recordMonth: string
   date: string
   chalanNo: string
   bmdNo: string
@@ -24,11 +25,12 @@ interface SaleRecord {
 
 export default function EcciAndSalePage() {
   const [records, setRecords] = useState<SaleRecord[]>([])
-  const [selectedMonth, setSelectedMonth] = useState<string>('') 
+  // Default to current month (YYYY-MM)
+  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7)) 
   const [isUploading, setIsUploading] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
-  // 1. Fetch Data from Supabase on Load
+  // 1. Fetch Data from Supabase
   const fetchRecords = async () => {
     setIsLoading(true)
     const { data, error } = await supabase
@@ -41,6 +43,7 @@ export default function EcciAndSalePage() {
     } else if (data) {
       const formattedData: SaleRecord[] = data.map((item: any) => ({
         id: item.id,
+        recordMonth: item.record_month || '',
         date: item.date || '',
         chalanNo: item.chalan_no || '',
         bmdNo: item.bmd_no || '',
@@ -62,8 +65,14 @@ export default function EcciAndSalePage() {
     fetchRecords()
   }, [])
 
-  // 2. Excel File Upload & Database Insert Handler
+  // 2. Smart Excel File Upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedMonth) {
+      alert("Please select a Month from the top before uploading the file!")
+      if(e.target) e.target.value = ''
+      return
+    }
+
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -78,7 +87,7 @@ export default function EcciAndSalePage() {
         const ws = wb.Sheets[wsname]
         const data = XLSX.utils.sheet_to_json(ws)
 
-        // Helper to convert Excel date safely
+        // Date Parser
         const parseDate = (val: any) => {
           if (!val) return null
           if (typeof val === 'number') {
@@ -88,26 +97,28 @@ export default function EcciAndSalePage() {
           return String(val).trim()
         }
 
-        // Prepare data for Supabase
+        // SMART KEY SCANNER: Removes all spaces, dots, and makes it lowercase
+        const normalizeKey = (key: string) => key.toString().toLowerCase().replace(/[^a-z0-9]/g, '')
+
         const rowsToInsert = data.map((rawRow: any) => {
-          // Smart Header Cleanup: removes extra spaces from Excel columns
           const row: any = {}
           Object.keys(rawRow).forEach(key => {
-            row[key.trim().toUpperCase()] = rawRow[key]
+            row[normalizeKey(key)] = rawRow[key]
           })
 
           return {
-            date: parseDate(row['DATE']),
-            chalan_no: row['CHALAN NO.'] ? String(row['CHALAN NO.']).trim() : null,
-            bmd_no: row['BMD NO.'] ? String(row['BMD NO.']).trim() : null,
-            qty: Number(row['QTY']) || 0,
-            amount: Number(row['AMOUNT']) || 0,
-            invoice_no: row['INVOICE NO.'] ? String(row['INVOICE NO.']).trim() : null,
-            ecci_date: parseDate(row['ECCI DATE']),
-            ecci_no: row['ECCI NO.'] ? String(row['ECCI NO.']).trim() : null,
-            grn_no: row['GRN NO.'] ? String(row['GRN NO.']).trim() : null,
-            bill_upload_date: parseDate(row['BILL UPLOAD DATE']),
-            chalan_date: parseDate(row['CHALAN DATE']),
+            record_month: selectedMonth, // Tags the record with the selected month
+            date: parseDate(row['date']),
+            chalan_no: row['chalanno'] ? String(row['chalanno']).trim() : null,
+            bmd_no: row['bmdno'] ? String(row['bmdno']).trim() : null,
+            qty: Number(row['qty']) || 0,
+            amount: Number(row['amount']) || 0,
+            invoice_no: row['invoiceno'] ? String(row['invoiceno']).trim() : null,
+            ecci_date: parseDate(row['eccidate']),
+            ecci_no: row['eccino'] ? String(row['eccino']).trim() : null,
+            grn_no: row['grnno'] ? String(row['grnno']).trim() : null,
+            bill_upload_date: parseDate(row['billuploaddate']),
+            chalan_date: parseDate(row['chalandate']),
           }
         })
 
@@ -117,27 +128,27 @@ export default function EcciAndSalePage() {
           return
         }
 
-        // Bulk insert to Supabase
+        // Save to Database
         const { error } = await supabase.from('ecci_sales').insert(rowsToInsert)
 
         if (error) {
           alert("Failed to save to database: " + error.message)
         } else {
-          alert("Data successfully saved to Database!")
-          fetchRecords() // Refresh UI automatically
+          alert(`Success! Data tagged and saved for ${selectedMonth}`)
+          fetchRecords()
         }
       } catch (error) {
         alert("Error reading Excel. Please ensure correct format.")
         console.error(error)
       } finally {
         setIsUploading(false)
-        if(e.target) e.target.value = '' // reset input
+        if(e.target) e.target.value = ''
       }
     }
     reader.readAsBinaryString(file)
   }
 
-  // Handle Delete Record
+  // Delete Record
   const handleDelete = async (id: string) => {
     if(confirm("Are you sure you want to delete this record?")) {
       const { error } = await supabase.from('ecci_sales').delete().eq('id', id)
@@ -147,15 +158,12 @@ export default function EcciAndSalePage() {
     }
   }
 
-  // Month Filtering Logic
+  // Strict Month Filtering (Only shows records uploaded for the selected month)
   const filteredRecords = selectedMonth 
-    ? records.filter(record => 
-        (record.date && record.date.startsWith(selectedMonth)) || 
-        (record.ecciDate && record.ecciDate.startsWith(selectedMonth))
-      )
-    : records
+    ? records.filter(record => record.recordMonth === selectedMonth)
+    : [] // If no month is selected, show nothing
 
-  // Calculations for Stats
+  // Stats
   const totalAmount = filteredRecords.reduce((sum, r) => sum + r.amount, 0)
   const totalQty = filteredRecords.reduce((sum, r) => sum + r.qty, 0)
   const totalInvoices = filteredRecords.filter(r => r.invoiceNo).length
@@ -174,16 +182,16 @@ export default function EcciAndSalePage() {
           </div>
           
           <div className="flex flex-col md:flex-row gap-4 items-center">
-            {/* Month Filter */}
-            <div className="bg-white border-2 border-gray-200 rounded-xl px-4 py-2 flex items-center gap-3 w-full md:w-auto shadow-sm">
-              <Calendar className="w-5 h-5 text-blue-600" />
+            {/* Strict Month Filter */}
+            <div className="bg-white border-2 border-blue-400 rounded-xl px-4 py-2 flex items-center gap-3 w-full md:w-auto shadow-sm ring-4 ring-blue-50">
+              <Calendar className="w-6 h-6 text-blue-600" />
               <div className="flex flex-col">
-                <label className="text-[10px] font-bold text-gray-500 uppercase">Select Month</label>
+                <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Selected Month</label>
                 <input 
                   type="month" 
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="outline-none font-semibold text-gray-900 bg-transparent"
+                  className="outline-none font-bold text-gray-900 bg-transparent text-lg"
                 />
               </div>
             </div>
@@ -194,23 +202,23 @@ export default function EcciAndSalePage() {
                 type="file" 
                 accept=".xlsx, .xls, .csv" 
                 onChange={handleFileUpload}
-                disabled={isUploading}
+                disabled={isUploading || !selectedMonth}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
                 id="excel-upload"
               />
               <label 
                 htmlFor="excel-upload"
-                className={`flex items-center justify-center gap-2 text-white font-semibold px-6 py-4 rounded-xl shadow-md transition-colors w-full ${isUploading ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'}`}
+                className={`flex items-center justify-center gap-2 text-white font-semibold px-6 py-4 rounded-xl shadow-md transition-colors w-full ${isUploading || !selectedMonth ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'}`}
               >
                 {isUploading ? (
                   <div className="flex items-center gap-2">
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                    Saving to Database...
+                    Saving Data...
                   </div>
                 ) : (
                   <>
                     <FileSpreadsheet className="w-5 h-5" />
-                    Upload Excel Sheet
+                    Upload for {selectedMonth || 'Month'}
                   </>
                 )}
               </label>
@@ -218,12 +226,20 @@ export default function EcciAndSalePage() {
           </div>
         </div>
 
+        {/* Warning if no month selected */}
+        {!selectedMonth && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 text-amber-700 font-semibold">
+            <AlertCircle className="w-5 h-5" />
+            Please select a month above to view or upload data.
+          </div>
+        )}
+
         {isLoading ? (
           <div className="flex justify-center items-center py-20 text-gray-500 font-medium">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
             Loading Database...
           </div>
-        ) : (
+        ) : selectedMonth && (
           <>
             {/* Stats - Strictly 2x2 Grid */}
             <div className="grid grid-cols-2 gap-4 mb-8">
@@ -246,7 +262,7 @@ export default function EcciAndSalePage() {
             </div>
 
             {/* Records Display - Strictly 2x2 Grid */}
-            {records.length > 0 ? (
+            {filteredRecords.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {filteredRecords.map((record) => (
                   <div key={record.id} className="bg-white border-2 border-gray-200 rounded-xl p-5 hover:border-blue-400 transition-colors shadow-sm flex flex-col relative group">
@@ -308,18 +324,10 @@ export default function EcciAndSalePage() {
             ) : (
               <div className="text-center py-20 border-2 border-dashed border-gray-200 rounded-xl mt-4 bg-gray-50 flex-grow flex flex-col items-center justify-center">
                 <Upload className="w-12 h-12 text-gray-300 mb-3" />
-                <p className="font-bold text-xl text-gray-700">No Data Available</p>
+                <p className="font-bold text-xl text-gray-700">No Data Available for {selectedMonth}</p>
                 <p className="text-sm text-gray-500 mt-2 max-w-sm mx-auto">
-                  Upload your Excel file to save records to the database permanently.
+                  Click the upload button to add your Excel file records specifically to this month.
                 </p>
-              </div>
-            )}
-
-            {/* Empty State after filtering */}
-            {records.length > 0 && filteredRecords.length === 0 && (
-              <div className="text-center py-12">
-                <p className="font-semibold text-lg text-gray-700">No records found for {selectedMonth}</p>
-                <p className="text-sm text-gray-500">Try selecting a different month.</p>
               </div>
             )}
           </>
