@@ -2,405 +2,239 @@
 
 import { useState } from 'react'
 import Navigation from '@/components/Navigation'
-import { Plus, Link2, FileText, CheckCircle, Clock } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { FileSpreadsheet, Calendar, IndianRupee, FileText, CheckCircle, Upload } from 'lucide-react'
+import * as XLSX from 'xlsx'
 
-interface Invoice {
+// Excel headers ke hisaab se naya interface
+interface SaleRecord {
   id: string
-  number: string
   date: string
+  chalanNo: string
+  bmdNo: string
+  qty: number
   amount: number
-  ecciNumber: string
-  grnNumber?: string
-  status: 'draft' | 'issued' | 'paid'
-  dueDate: string
+  invoiceNo: string
+  ecciDate: string
+  ecciNo: string
+  grnNo: string
+  billUploadDate: string
+  chalanDate: string
 }
 
-interface ECCI {
-  id: string
-  number: string
-  date: string
-  amount: number
-  invoiceId?: string
-  grnNumber?: string
-  description: string
-}
+export default function EcciAndSalePage() {
+  const [records, setRecords] = useState<SaleRecord[]>([])
+  const [selectedMonth, setSelectedMonth] = useState<string>('') // Format: YYYY-MM
+  const [isUploading, setIsUploading] = useState(false)
 
-const mockECCIs: ECCI[] = [
-  {
-    id: '1',
-    number: 'ECCI-2024-001',
-    date: '2024-12-01',
-    amount: 50000,
-    description: 'Explosives supply - Type A',
-    grnNumber: 'GRN-2024-001',
-  },
-  {
-    id: '2',
-    number: 'ECCI-2024-002',
-    date: '2024-12-05',
-    amount: 35000,
-    description: 'Detonators and accessories',
-  },
-  {
-    id: '3',
-    number: 'ECCI-2024-003',
-    date: '2024-12-08',
-    amount: 75000,
-    description: 'Large scale explosives shipment',
-    invoiceId: '1',
-  },
-]
+  // Excel File Upload Handler
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
 
-const mockInvoices: Invoice[] = [
-  {
-    id: '1',
-    number: 'INV-2024-001',
-    date: '2024-12-08',
-    amount: 75000,
-    ecciNumber: 'ECCI-2024-003',
-    grnNumber: 'GRN-2024-003',
-    status: 'paid',
-    dueDate: '2024-12-15',
-  },
-  {
-    id: '2',
-    number: 'INV-2024-002',
-    date: '2024-12-05',
-    amount: 35000,
-    ecciNumber: 'ECCI-2024-002',
-    status: 'issued',
-    dueDate: '2024-12-20',
-  },
-]
+    setIsUploading(true)
+    const reader = new FileReader()
 
-function InvoiceForm({ ecciRecords, onSubmit }: { ecciRecords: ECCI[], onSubmit: (data: any) => void }) {
-  const [formData, setFormData] = useState({
-    invoiceNumber: '',
-    date: new Date().toISOString().split('T')[0],
-    selectedECCI: '',
-    grnNumber: '',
-  })
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result
+        const wb = XLSX.read(bstr, { type: 'binary' })
+        const wsname = wb.SheetNames[0]
+        const ws = wb.Sheets[wsname]
+        const data = XLSX.utils.sheet_to_json(ws)
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onSubmit(formData)
-    setFormData({
-      invoiceNumber: '',
-      date: new Date().toISOString().split('T')[0],
-      selectedECCI: '',
-      grnNumber: '',
-    })
-  }
+        // Mapping Excel headers to our state
+        const formattedData: SaleRecord[] = data.map((row: any, index: number) => {
+          // Helper to convert Excel date serial to readable string (YYYY-MM-DD) or fallback
+          const parseDate = (val: any) => {
+            if (!val) return ''
+            if (typeof val === 'number') {
+              const date = new Date((val - (25567 + 2)) * 86400 * 1000)
+              return date.toISOString().split('T')[0]
+            }
+            return String(val)
+          }
 
-  const selectedECCI = ecciRecords.find(e => e.id === formData.selectedECCI)
+          return {
+            id: String(index + 1),
+            date: parseDate(row['DATE']),
+            chalanNo: row['CHALAN NO.'] || '',
+            bmdNo: row['BMD NO.'] || '',
+            qty: Number(row['QTY']) || 0,
+            amount: Number(row['AMOUNT']) || 0,
+            invoiceNo: row['INVOICE NO.'] || '',
+            ecciDate: parseDate(row['ECCI DATE']),
+            ecciNo: row['ECCI NO.'] || '',
+            grnNo: row['GRN NO.'] || '',
+            billUploadDate: parseDate(row['BILL UPLOAD DATE']),
+            chalanDate: parseDate(row['CHALAN DATE']),
+          }
+        })
 
-  return (
-    <div className="bg-gray-50 border-2 border-gray-200 rounded-xl p-6 mb-8">
-      <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-        <Plus className="w-5 h-5 text-blue-600" />
-        Link ECCI to Invoice
-      </h2>
-      
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Invoice Number */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">Invoice Number</label>
-            <input
-              type="text"
-              placeholder="INV-2024-XXX"
-              value={formData.invoiceNumber}
-              onChange={(e) => setFormData({ ...formData, invoiceNumber: e.target.value })}
-              className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-blue-600"
-              required
-            />
-          </div>
-
-          {/* Date */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">Invoice Date</label>
-            <input
-              type="date"
-              value={formData.date}
-              onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-              className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 outline-none focus:ring-2 focus:ring-blue-600"
-              required
-            />
-          </div>
-
-          {/* ECCI Selection */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">Link to ECCI</label>
-            <select
-              value={formData.selectedECCI}
-              onChange={(e) => setFormData({ ...formData, selectedECCI: e.target.value })}
-              className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 outline-none focus:ring-2 focus:ring-blue-600"
-              required
-            >
-              <option value="">Select ECCI document</option>
-              {ecciRecords.map(ecci => (
-                <option key={ecci.id} value={ecci.id}>
-                  {ecci.number} - {ecci.description}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* GRN Number */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">GRN Number</label>
-            <input
-              type="text"
-              placeholder="GRN-2024-XXX"
-              value={formData.grnNumber}
-              onChange={(e) => setFormData({ ...formData, grnNumber: e.target.value })}
-              className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-blue-600"
-            />
-          </div>
-        </div>
-
-        {/* Amount Display */}
-        {selectedECCI && (
-          <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg mt-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-gray-900">Invoice Amount</span>
-              <span className="text-2xl font-bold text-blue-700">₹{selectedECCI.amount.toLocaleString('en-IN')}</span>
-            </div>
-          </div>
-        )}
-
-        <div className="flex gap-3 mt-4">
-          <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex-1">
-            Create Invoice
-          </Button>
-          <button
-            type="button"
-            className="px-6 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-900 font-semibold rounded-lg transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
-  )
-}
-
-function ECCICard({ ecci, linkedInvoice }: { ecci: ECCI, linkedInvoice?: Invoice }) {
-  return (
-    <div className="bg-gray-50 border-2 border-gray-200 rounded-xl p-6 hover:border-blue-400 transition-colors flex flex-col">
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h3 className="font-bold text-gray-900 text-lg">{ecci.number}</h3>
-          <p className="text-xs text-gray-600">{new Date(ecci.date).toLocaleDateString()}</p>
-        </div>
-        <div className="px-3 py-1 rounded-full text-xs font-bold text-blue-700 bg-blue-100 border border-blue-200">
-          ₹{ecci.amount.toLocaleString('en-IN')}
-        </div>
-      </div>
-
-      <p className="text-sm text-gray-900 mb-4 flex-grow">{ecci.description}</p>
-
-      {linkedInvoice ? (
-        <div className="mb-4 p-3 bg-emerald-50 border-2 border-emerald-300 rounded-lg">
-          <div className="flex items-center gap-2 mb-2">
-            <CheckCircle className="w-4 h-4 text-emerald-700" />
-            <p className="text-xs font-semibold text-emerald-700">Linked to Invoice</p>
-          </div>
-          <p className="text-sm font-bold text-emerald-600">{linkedInvoice.number}</p>
-        </div>
-      ) : (
-        <div className="mb-4 p-3 bg-amber-50 border-2 border-amber-300 rounded-lg">
-          <div className="flex items-center gap-2 mb-1">
-            <Clock className="w-4 h-4 text-amber-700" />
-            <p className="text-xs font-semibold text-amber-700">Awaiting Invoice</p>
-          </div>
-          <p className="text-xs text-amber-600">Link this ECCI to an invoice</p>
-        </div>
-      )}
-
-      {ecci.grnNumber && (
-        <div className="mb-4 p-2 bg-blue-50 rounded-lg border border-blue-200">
-          <p className="text-xs text-blue-700 font-semibold">GRN: {ecci.grnNumber}</p>
-        </div>
-      )}
-
-      <div className="flex gap-2 pt-4 border-t border-gray-200 mt-auto">
-        <button className="flex-1 px-3 py-2 bg-gray-200 hover:bg-gray-300 text-gray-900 text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2">
-          <Link2 className="w-4 h-4" />
-          Link
-        </button>
-        <button className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors">
-          View
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function InvoiceCard({ invoice }: { invoice: Invoice }) {
-  const statusConfig = {
-    draft: { bg: 'bg-slate-100', text: 'text-slate-600', label: 'Draft' },
-    issued: { bg: 'bg-blue-50', text: 'text-blue-700', label: 'Issued' },
-    paid: { bg: 'bg-emerald-50', text: 'text-emerald-700', label: 'Paid' },
-  }
-
-  const config = statusConfig[invoice.status]
-
-  return (
-    <div className={`bg-gray-50 border-2 border-gray-200 rounded-xl p-6 flex flex-col`}>
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h3 className="font-bold text-gray-900 text-lg">{invoice.number}</h3>
-          <p className={`text-xs font-semibold px-2 py-1 inline-block rounded-md mt-1 ${config.bg} ${config.text}`}>{config.label}</p>
-        </div>
-        <div className="text-right">
-          <p className="text-xs text-gray-600">Amount</p>
-          <p className="text-lg font-bold text-blue-700">₹{invoice.amount.toLocaleString('en-IN')}</p>
-        </div>
-      </div>
-
-      <div className="space-y-3 mb-6 text-sm flex-grow">
-        <div className="flex justify-between border-b border-gray-200 pb-2">
-          <span className="text-gray-600">Invoice Date</span>
-          <span className="font-semibold text-gray-900">{new Date(invoice.date).toLocaleDateString()}</span>
-        </div>
-        <div className="flex justify-between border-b border-gray-200 pb-2">
-          <span className="text-gray-600">Due Date</span>
-          <span className="font-semibold text-gray-900">{new Date(invoice.dueDate).toLocaleDateString()}</span>
-        </div>
-        <div className="flex justify-between border-b border-gray-200 pb-2">
-          <span className="text-gray-600">Linked ECCI</span>
-          <span className="font-semibold text-blue-600">{invoice.ecciNumber}</span>
-        </div>
-        {invoice.grnNumber && (
-          <div className="flex justify-between border-b border-gray-200 pb-2">
-            <span className="text-gray-600">GRN</span>
-            <span className="font-semibold text-purple-700">{invoice.grnNumber}</span>
-          </div>
-        )}
-      </div>
-
-      <div className="flex gap-2 pt-4 mt-auto">
-        <button className="flex-1 px-3 py-2 bg-gray-200 hover:bg-gray-300 text-gray-900 text-sm font-semibold rounded-lg transition-colors">
-          View
-        </button>
-        <button className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors">
-          Download
-        </button>
-      </div>
-    </div>
-  )
-}
-
-export default function BillingPage() {
-  const [ecciRecords, setEcciRecords] = useState(mockECCIs)
-  const [invoices, setInvoices] = useState(mockInvoices)
-  const [activeTab, setActiveTab] = useState<'ecci' | 'invoices'>('ecci')
-
-  const handleCreateInvoice = (data: any) => {
-    const newInvoice: Invoice = {
-      id: String(invoices.length + 1),
-      number: data.invoiceNumber,
-      date: data.date,
-      amount: ecciRecords.find(e => e.id === data.selectedECCI)?.amount || 0,
-      ecciNumber: ecciRecords.find(e => e.id === data.selectedECCI)?.number || '',
-      grnNumber: data.grnNumber,
-      status: 'issued',
-      dueDate: new Date(new Date(data.date).getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        setRecords(formattedData)
+      } catch (error) {
+        alert("Error parsing Excel file. Ensure headers match the exact format.")
+        console.error(error)
+      } finally {
+        setIsUploading(false)
+      }
     }
-    setInvoices([newInvoice, ...invoices])
-    
-    // Update ECCI with linked invoice
-    if (data.selectedECCI) {
-      setEcciRecords(ecciRecords.map(ecci => 
-        ecci.id === data.selectedECCI 
-          ? { ...ecci, invoiceId: newInvoice.id, grnNumber: data.grnNumber }
-          : ecci
-      ))
-    }
+    reader.readAsBinaryString(file)
   }
 
-  const totalECCIAmount = ecciRecords.reduce((sum, e) => sum + e.amount, 0)
-  const totalInvoiceAmount = invoices.reduce((sum, i) => sum + i.amount, 0)
-  const paidAmount = invoices.filter(i => i.status === 'paid').reduce((sum, i) => sum + i.amount, 0)
+  // Month Filtering Logic
+  const filteredRecords = selectedMonth 
+    ? records.filter(record => record.date.startsWith(selectedMonth) || record.ecciDate.startsWith(selectedMonth))
+    : records
+
+  // Calculations for Stats
+  const totalAmount = filteredRecords.reduce((sum, r) => sum + r.amount, 0)
+  const totalQty = filteredRecords.reduce((sum, r) => sum + r.qty, 0)
+  const totalInvoices = filteredRecords.filter(r => r.invoiceNo).length
+  const totalGrns = filteredRecords.filter(r => r.grnNo).length
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white flex flex-col">
       <Navigation />
       
-      <main className="pt-4 md:pt-6 px-4 md:px-8 pb-28">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Procurement, Billing & Invoicing</h1>
-          <p className="text-gray-600">Manage ECCI documents, link invoices, and track GRN payments</p>
+      <main className="pt-4 md:pt-6 px-4 md:px-8 pb-28 flex-grow flex flex-col">
+        {/* Header Section */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">ECCI and SALE</h1>
+            <p className="text-gray-600">Upload Excel reports and track monthly billing records</p>
+          </div>
+          
+          <div className="flex flex-col md:flex-row gap-4 items-center">
+            {/* Month Filter */}
+            <div className="bg-white border-2 border-gray-200 rounded-xl px-4 py-2 flex items-center gap-3 w-full md:w-auto shadow-sm">
+              <Calendar className="w-5 h-5 text-blue-600" />
+              <div className="flex flex-col">
+                <label className="text-[10px] font-bold text-gray-500 uppercase">Select Month</label>
+                <input 
+                  type="month" 
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="outline-none font-semibold text-gray-900 bg-transparent"
+                />
+              </div>
+            </div>
+
+            {/* Excel Upload Button */}
+            <div className="relative w-full md:w-auto">
+              <input 
+                type="file" 
+                accept=".xlsx, .xls, .csv" 
+                onChange={handleFileUpload}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                id="excel-upload"
+              />
+              <label 
+                htmlFor="excel-upload"
+                className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-4 rounded-xl shadow-md transition-colors w-full cursor-pointer"
+              >
+                {isUploading ? (
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                ) : (
+                  <>
+                    <FileSpreadsheet className="w-5 h-5" />
+                    Upload Excel Sheet
+                  </>
+                )}
+              </label>
+            </div>
+          </div>
         </div>
 
-        {/* Form */}
-        <InvoiceForm ecciRecords={ecciRecords} onSubmit={handleCreateInvoice} />
-
-        {/* Stats - Maintained strictly as 2x2 grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-          <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-5">
-            <p className="text-sm text-gray-600 mb-1 font-medium">Total ECCI Amount</p>
-            <p className="text-2xl font-bold text-gray-900">₹{totalECCIAmount.toLocaleString('en-IN')}</p>
+        {/* Stats - Strictly 2x2 Grid */}
+        <div className="grid grid-cols-2 gap-4 mb-8">
+          <div className="bg-gray-50 border-2 border-gray-200 rounded-xl p-5">
+            <p className="text-sm font-medium text-gray-600 mb-1">Total Amount</p>
+            <p className="text-2xl font-bold text-blue-700">₹{totalAmount.toLocaleString('en-IN')}</p>
           </div>
-          <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-5">
-            <p className="text-sm text-blue-600 mb-1 font-medium">Total Invoiced</p>
-            <p className="text-2xl font-bold text-blue-700">₹{totalInvoiceAmount.toLocaleString('en-IN')}</p>
+          <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-5">
+            <p className="text-sm font-medium text-blue-700 mb-1">Total Quantity</p>
+            <p className="text-2xl font-bold text-blue-800">{totalQty.toLocaleString('en-IN')}</p>
           </div>
-          <div className="bg-emerald-50 border-2 border-emerald-200 rounded-lg p-5">
-            <p className="text-sm text-emerald-600 mb-1 font-medium">Total Paid</p>
-            <p className="text-2xl font-bold text-emerald-700">₹{paidAmount.toLocaleString('en-IN')}</p>
+          <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-5">
+            <p className="text-sm font-medium text-emerald-700 mb-1">Invoices Linked</p>
+            <p className="text-2xl font-bold text-emerald-800">{totalInvoices}</p>
           </div>
-          <div className="bg-amber-50 border-2 border-amber-200 rounded-lg p-5">
-            <p className="text-sm text-amber-600 mb-1 font-medium">Pending</p>
-            <p className="text-2xl font-bold text-amber-700">₹{(totalInvoiceAmount - paidAmount).toLocaleString('en-IN')}</p>
+          <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-5">
+            <p className="text-sm font-medium text-amber-700 mb-1">GRNs Generated</p>
+            <p className="text-2xl font-bold text-amber-800">{totalGrns}</p>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-4 mb-6 border-b border-gray-200">
-          <button
-            onClick={() => setActiveTab('ecci')}
-            className={`px-4 py-3 font-bold text-sm transition-colors border-b-2 ${
-              activeTab === 'ecci'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-900'
-            }`}
-          >
-            ECCI Documents ({ecciRecords.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('invoices')}
-            className={`px-4 py-3 font-bold text-sm transition-colors border-b-2 ${
-              activeTab === 'invoices'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-900'
-            }`}
-          >
-            Invoices ({invoices.length})
-          </button>
-        </div>
-
-        {/* ECCI View - 2x2 Grid */}
-        {activeTab === 'ecci' && (
+        {/* Records Display - Strictly 2x2 Grid */}
+        {records.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {ecciRecords.map(ecci => {
-              const linkedInvoice = invoices.find(inv => inv.ecciNumber === ecci.number)
-              return <ECCICard key={ecci.id} ecci={ecci} linkedInvoice={linkedInvoice} />
-            })}
-          </div>
-        )}
+            {filteredRecords.map((record) => (
+              <div key={record.id} className="bg-white border-2 border-gray-200 rounded-xl p-5 hover:border-blue-400 transition-colors shadow-sm flex flex-col">
+                
+                {/* Card Header */}
+                <div className="flex items-start justify-between mb-4 border-b border-gray-100 pb-3">
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-lg">{record.ecciNo || 'NO ECCI'}</h3>
+                    <p className="text-xs font-semibold text-gray-500">Date: {record.date}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-blue-700">₹{record.amount.toLocaleString('en-IN')}</p>
+                    <p className="text-xs font-bold text-gray-500">QTY: {record.qty}</p>
+                  </div>
+                </div>
 
-        {/* Invoices View - 2x2 Grid */}
-        {activeTab === 'invoices' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {invoices.map(invoice => (
-              <InvoiceCard key={invoice.id} invoice={invoice} />
+                {/* Card Body - 2 Column Detail Layout */}
+                <div className="grid grid-cols-2 gap-y-3 gap-x-4 mb-4 flex-grow">
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Chalan No</p>
+                    <p className="text-sm font-semibold text-gray-900">{record.chalanNo || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">BMD No</p>
+                    <p className="text-sm font-semibold text-gray-900">{record.bmdNo || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Invoice No</p>
+                    <p className={`text-sm font-bold ${record.invoiceNo ? 'text-emerald-600' : 'text-gray-400'}`}>
+                      {record.invoiceNo || 'Pending'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">GRN No</p>
+                    <p className={`text-sm font-bold ${record.grnNo ? 'text-purple-600' : 'text-gray-400'}`}>
+                      {record.grnNo || 'Pending'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">ECCI Date</p>
+                    <p className="text-sm font-medium text-gray-700">{record.ecciDate || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Bill Upload</p>
+                    <p className="text-sm font-medium text-gray-700">{record.billUploadDate || '-'}</p>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
+        ) : (
+          <div className="text-center py-20 border-2 border-dashed border-gray-200 rounded-xl mt-4 bg-gray-50 flex-grow flex flex-col items-center justify-center">
+            <Upload className="w-12 h-12 text-gray-300 mb-3" />
+            <p className="font-bold text-xl text-gray-700">No Data Available</p>
+            <p className="text-sm text-gray-500 mt-2 max-w-sm mx-auto">
+              Please upload your Excel file using the button above. Ensure the file contains the exact headers shown in your template.
+            </p>
+          </div>
         )}
+
+        {/* Empty State after filtering */}
+        {records.length > 0 && filteredRecords.length === 0 && (
+          <div className="text-center py-12">
+            <p className="font-semibold text-lg text-gray-700">No records found for {selectedMonth}</p>
+            <p className="text-sm text-gray-500">Try selecting a different month.</p>
+          </div>
+        )}
+
       </main>
     </div>
   )
