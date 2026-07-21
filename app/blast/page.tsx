@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import Navigation from '@/components/Navigation'
-import { Plus, Trash2, Zap, MapPin, Calendar, Clock, X, MessageCircle } from 'lucide-react'
+import { Plus, Trash2, Zap, MapPin, Calendar, Clock, X, MessageCircle, Upload, Filter, FileSpreadsheet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface BlastRecord {
@@ -47,7 +47,6 @@ interface BlastRecord {
   blastingTime: string
 }
 
-// Default data based on your exact provided report
 const mockBlastRecords: BlastRecord[] = [
   {
     id: '1',
@@ -136,8 +135,6 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
   return (
     <div className="p-2">
       <form onSubmit={handleSubmit} className="space-y-6">
-        
-        {/* General Details */}
         <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
           <h3 className="font-bold text-blue-800 mb-3 text-sm flex items-center gap-1"><MapPin className="w-4 h-4"/> Basic Info</h3>
           <div className="grid grid-cols-2 gap-4">
@@ -148,7 +145,6 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
           </div>
         </div>
 
-        {/* Geometry & Holes */}
         <div className="p-4 rounded-xl border border-gray-200">
           <h3 className="font-bold text-gray-800 mb-3 text-sm">Holes & Geometry</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -166,7 +162,6 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
           </div>
         </div>
 
-        {/* Explosives & Charges */}
         <div className="p-4 rounded-xl border border-gray-200">
           <h3 className="font-bold text-gray-800 mb-3 text-sm">Charge Parameters</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -183,7 +178,6 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
           </div>
         </div>
 
-        {/* Accessories */}
         <div className="p-4 rounded-xl border border-gray-200">
           <h3 className="font-bold text-gray-800 mb-3 text-sm">Accessories & Delays</h3>
           <div className="grid grid-cols-3 gap-4 mb-4">
@@ -205,7 +199,6 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
           </div>
         </div>
 
-        {/* Environmental */}
         <div className="p-4 rounded-xl border border-gray-200">
           <h3 className="font-bold text-gray-800 mb-3 text-sm">Environmental & Others</h3>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -236,7 +229,32 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
 export default function BlastPage() {
   const [records, setRecords] = useState<BlastRecord[]>(mockBlastRecords)
   const [isFormModalOpen, setIsFormModalOpen] = useState(false)
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false)
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
+  const [bulkText, setBulkText] = useState('')
+
+  // Month Filter Logic
+  const availableMonths = useMemo(() => {
+    const months = new Set(records.map(r => r.date.substring(0, 7))) // YYYY-MM
+    return Array.from(months).sort().reverse()
+  }, [records])
+
+  const [selectedMonth, setSelectedMonth] = useState<string>('')
+
+  // Set initial selected month
+  if (selectedMonth === '' && availableMonths.length > 0) {
+    setSelectedMonth(availableMonths[0])
+  }
+
+  const filteredRecords = selectedMonth 
+    ? records.filter(r => r.date.startsWith(selectedMonth))
+    : records
+
+  const formatMonthYear = (yyyy_mm: string) => {
+    if (!yyyy_mm) return ''
+    const date = new Date(yyyy_mm + '-01')
+    return date.toLocaleString('default', { month: 'long', year: 'numeric' })
+  }
 
   const handleNewEntry = (data: any) => {
     const newRecord: BlastRecord = {
@@ -247,6 +265,71 @@ export default function BlastPage() {
     setIsFormModalOpen(false)
   }
 
+  // Bulk Import Logic
+  const handleBulkImport = () => {
+    if (!bulkText.trim()) return
+
+    const rows = bulkText.trim().split('\n')
+    const newEntries: BlastRecord[] = []
+
+    rows.forEach(row => {
+      const cols = row.split('\t')
+      if (cols.length < 5) return // Skip empty or invalid rows
+
+      // Map columns from standard Excel order (make sure to match this in UI)
+      newEntries.push({
+        id: Math.random().toString(36).substr(2, 9),
+        date: cols[0] || new Date().toISOString().split('T')[0],
+        blastingTime: cols[1] || '00:00',
+        face: cols[2] || '',
+        location: cols[3] || '',
+        holesMain: parseFloat(cols[4]) || 0,
+        holesPilot: parseFloat(cols[5]) || 0,
+        benchHeight: parseFloat(cols[6]) || 0,
+        depthMain: parseFloat(cols[7]) || 0,
+        depthPilot: parseFloat(cols[8]) || 0,
+        burden: parseFloat(cols[9]) || 0,
+        spacing: parseFloat(cols[10]) || 0,
+        stemmingMain: parseFloat(cols[11]) || 0,
+        stemmingPilot: parseFloat(cols[12]) || 0,
+        cphMain: parseFloat(cols[13]) || 0,
+        cphPilot: parseFloat(cols[14]) || 0,
+        mcdMain: parseFloat(cols[15]) || 0,
+        mcdPilot: parseFloat(cols[16]) || 0,
+        explosiveQty: parseFloat(cols[17]) || 0,
+        volume: parseFloat(cols[18]) || 0,
+        pf: parseFloat(cols[19]) || 0,
+        cf: parseFloat(cols[20]) || 0,
+        ntd17: parseFloat(cols[21]) || 0,
+        ntd25: parseFloat(cols[22]) || 0,
+        ntd42: parseFloat(cols[23]) || 0,
+        ntdLead17: parseFloat(cols[24]) || 0,
+        ntdLead25: parseFloat(cols[25]) || 0,
+        ntdLead42: parseFloat(cols[26]) || 0,
+        sureBlast: parseFloat(cols[27]) || 0,
+        ikon: parseFloat(cols[28]) || 0,
+        booster: parseFloat(cols[29]) || 0,
+        initialDensity: parseFloat(cols[30]) || 0,
+        finalDensity: parseFloat(cols[31]) || 0,
+        dth10m: parseFloat(cols[32]) || 0,
+        dth6m: parseFloat(cols[33]) || 0,
+        vibration: parseFloat(cols[34]) || 0,
+        db: parseFloat(cols[35]) || 0,
+        distance: parseFloat(cols[36]) || 0,
+        manPower: parseFloat(cols[37]) || 0,
+      })
+    })
+
+    if (newEntries.length > 0) {
+      setRecords([...newEntries, ...records])
+      alert(`${newEntries.length} records added successfully!`)
+      setBulkText('')
+      setIsBulkModalOpen(false)
+    } else {
+      alert("No valid data found to import.")
+    }
+  }
+
   const handleDeleteRecord = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if(confirm("Are you sure you want to delete this blast report?")) {
@@ -255,9 +338,8 @@ export default function BlastPage() {
     }
   }
 
-  // Exact formatting function for WhatsApp integration
   const shareToWhatsApp = (record: BlastRecord) => {
-    const formattedDate = new Date(record.date).toLocaleDateString('en-IN') // Format: DD/MM/YYYY
+    const formattedDate = new Date(record.date).toLocaleDateString('en-IN') 
     
     const message = `BDEPL 
 Date - ${formattedDate} 
@@ -330,38 +412,69 @@ Blasting Time : ${record.blastingTime}`
     <div className="min-h-screen bg-white">
       <Navigation />
       
-      <main className="pt-4 md:pt-6 px-4 md:px-8 pb-28">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8">
+      <main className="pt-4 md:pt-6 px-4 md:px-8 pb-28 max-w-7xl mx-auto">
+        
+        {/* Header & Controls */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Blast Reports</h1>
             <p className="text-gray-600">Track drilling, explosives, and environmental metrics</p>
           </div>
-          <Button 
-            onClick={() => setIsFormModalOpen(true)} 
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-6 rounded-xl shadow-md w-full md:w-auto"
-          >
-            <Plus className="w-5 h-5 mr-2" /> Add Blast Report
-          </Button>
+          
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            {/* MONTH FILTER */}
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Filter className="h-5 w-5 text-gray-400" />
+              </div>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="block w-full pl-10 pr-10 py-3 text-base border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent rounded-xl appearance-none bg-white font-semibold text-gray-700 cursor-pointer shadow-sm"
+              >
+                {availableMonths.map(month => (
+                  <option key={month} value={month}>{formatMonthYear(month)}</option>
+                ))}
+                {availableMonths.length === 0 && <option value="">No Data Available</option>}
+              </select>
+            </div>
+
+            {/* BULK UPLOAD BUTTON */}
+            <Button 
+              onClick={() => setIsBulkModalOpen(true)} 
+              variant="outline"
+              className="border-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-bold px-4 py-6 rounded-xl shadow-sm w-full sm:w-auto"
+            >
+              <FileSpreadsheet className="w-5 h-5 mr-2" /> Bulk Paste
+            </Button>
+
+            {/* NEW ENTRY BUTTON */}
+            <Button 
+              onClick={() => setIsFormModalOpen(true)} 
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-6 rounded-xl shadow-md w-full sm:w-auto"
+            >
+              <Plus className="w-5 h-5 mr-2" /> Add Single
+            </Button>
+          </div>
         </div>
 
         {/* Stats Grid - 2x2 Strict */}
-        <div className="grid grid-cols-2 md:grid-cols-2 gap-4 mb-8">
-          <div className="bg-orange-50 border-2 border-orange-200 rounded-xl p-5">
-            <p className="text-sm font-medium text-orange-700 mb-1">Total Blasts</p>
-            <p className="text-2xl font-bold text-orange-700">{records.length}</p>
+        <div className="grid grid-cols-2 gap-4 mb-8">
+          <div className="bg-orange-50 border-2 border-orange-200 rounded-xl p-5 shadow-sm">
+            <p className="text-sm font-bold text-orange-700 uppercase tracking-wide mb-1">Blasts in {formatMonthYear(selectedMonth)}</p>
+            <p className="text-3xl font-black text-orange-700">{filteredRecords.length}</p>
           </div>
-          <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-5">
-            <p className="text-sm font-medium text-blue-700 mb-1">Avg Explosive (Kg)</p>
-            <p className="text-2xl font-bold text-blue-700">
-              {records.length ? (records.reduce((acc, curr) => acc + curr.explosiveQty, 0) / records.length).toLocaleString('en-IN') : 0}
+          <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-5 shadow-sm">
+            <p className="text-sm font-bold text-blue-700 uppercase tracking-wide mb-1">Avg Explosive (Kg)</p>
+            <p className="text-3xl font-black text-blue-700">
+              {filteredRecords.length ? Math.round(filteredRecords.reduce((acc, curr) => acc + curr.explosiveQty, 0) / filteredRecords.length).toLocaleString('en-IN') : 0}
             </p>
           </div>
         </div>
 
-        {/* Blast Cards Grid - STRICTLY Minimal Information on Card */}
+        {/* Blast Cards Grid - STRICTLY 2 Column */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {records.length > 0 ? records.map((record) => (
+          {filteredRecords.length > 0 ? filteredRecords.map((record) => (
             <div 
               key={record.id} 
               onClick={() => setSelectedRecordId(record.id)}
@@ -370,27 +483,27 @@ Blasting Time : ${record.blastingTime}`
               <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-4">
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-blue-600" />
-                  <span className="font-semibold text-gray-900 text-sm">{new Date(record.date).toLocaleDateString('en-IN')}</span>
+                  <span className="font-bold text-gray-900 text-sm">{new Date(record.date).toLocaleDateString('en-IN')}</span>
                 </div>
                 <div className="flex items-center gap-1.5 text-gray-500">
                   <Clock className="w-4 h-4" />
-                  <span className="text-sm font-medium">{record.blastingTime}</span>
+                  <span className="text-sm font-bold">{record.blastingTime}</span>
                 </div>
               </div>
 
               <div className="space-y-4 mb-2 flex-grow">
                 <div>
                   <p className="text-xs font-bold text-gray-500 uppercase mb-0.5">Location / Face</p>
-                  <p className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <p className="text-lg font-black text-gray-900 flex items-center gap-2">
                     <MapPin className="w-5 h-5 text-red-500" /> {record.face} - {record.location}
                   </p>
                 </div>
                 
-                <div className="bg-orange-50 border border-orange-100 p-3 rounded-lg flex items-center justify-between mt-auto">
+                <div className="bg-orange-50 border-2 border-orange-100 p-3 rounded-lg flex items-center justify-between mt-auto">
                   <span className="text-sm font-bold text-orange-800 flex items-center gap-1.5">
                     <Zap className="w-4 h-4" /> Total Explosive
                   </span>
-                  <span className="text-lg font-black text-orange-700">{record.explosiveQty.toLocaleString('en-IN')} Kg</span>
+                  <span className="text-xl font-black text-orange-700">{record.explosiveQty.toLocaleString('en-IN')} Kg</span>
                 </div>
               </div>
 
@@ -399,29 +512,29 @@ Blasting Time : ${record.blastingTime}`
                 className="absolute top-4 right-4 text-red-500 hover:bg-red-100 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity bg-white/80"
                 title="Delete Record"
               >
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="w-5 h-5" />
               </button>
             </div>
           )) : (
             <div className="col-span-full text-center py-16 border-2 border-dashed border-gray-200 rounded-xl text-gray-500">
-              <Zap className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-              <p className="font-semibold text-lg text-gray-700">No blast reports</p>
-              <p className="text-sm mt-1">Add a new report to see it here.</p>
+              <Filter className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+              <p className="font-semibold text-lg text-gray-700">No records found for {formatMonthYear(selectedMonth)}</p>
+              <p className="text-sm mt-1">Change the month or add a new report.</p>
             </div>
           )}
         </div>
       </main>
 
-      {/* Form Modal */}
+      {/* SINGLE FORM MODAL */}
       {isFormModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative">
             <div className="sticky top-0 bg-white border-b border-gray-100 p-5 flex items-center justify-between z-10">
-              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <Plus className="w-5 h-5 text-blue-600" /> Enter Blast Report
+              <h2 className="text-xl font-black text-gray-900 flex items-center gap-2">
+                <Plus className="w-6 h-6 text-blue-600" /> Enter Blast Report
               </h2>
-              <button onClick={() => setIsFormModalOpen(false)} className="text-gray-400 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 p-2 rounded-full transition-colors">
-                <X className="w-5 h-5" />
+              <button onClick={() => setIsFormModalOpen(false)} className="text-gray-400 hover:text-gray-900 bg-gray-50 hover:bg-gray-200 p-2 rounded-full transition-colors">
+                <X className="w-6 h-6" />
               </button>
             </div>
             <BlastForm onSubmit={handleNewEntry} onCancel={() => setIsFormModalOpen(false)} />
@@ -429,20 +542,61 @@ Blasting Time : ${record.blastingTime}`
         </div>
       )}
 
-      {/* Detail Modal with WhatsApp Share */}
+      {/* BULK IMPORT MODAL */}
+      {isBulkModalOpen && (
+        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-gray-900 flex items-center gap-2">
+                  <FileSpreadsheet className="w-6 h-6 text-emerald-600" /> Bulk Paste from Excel
+                </h2>
+                <p className="text-sm font-semibold text-gray-500 mt-1">Copy multiple rows from your sheet and paste below.</p>
+              </div>
+              <button onClick={() => setIsBulkModalOpen(false)} className="text-gray-400 hover:text-gray-900 p-2 rounded-full bg-gray-50">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="p-5 overflow-y-auto bg-gray-50">
+              <div className="bg-blue-50 border border-blue-200 text-blue-800 text-xs font-semibold p-4 rounded-xl mb-4">
+                <strong>Crucial Step:</strong> Your Excel columns must be strictly in this exact order to work properly:
+                <div className="mt-2 text-gray-600 font-mono text-[10px] leading-relaxed break-words">
+                  Date (YYYY-MM-DD) | Blasting Time | Face | Exact Location | Holes(Main) | Holes(Pilot) | Bench Height | Depth(Main) | Depth(Pilot) | Burden | Spacing | Stemming(Main) | Stemming(Pilot) | CPH(Main) | CPH(Pilot) | MCD(Main) | MCD(Pilot) | Total Explosive | Volume | Pf | Cf | 17ms | 25ms | 42ms | Lead17 | Lead25 | Lead42 | SureBlast | Ikon | Booster | Init Density | Final Density | DTH10m | DTH6m | Vibration | DB | Distance | Man Power
+                </div>
+              </div>
+
+              <textarea 
+                value={bulkText}
+                onChange={(e) => setBulkText(e.target.value)}
+                placeholder="Click here and press Ctrl+V to paste your Excel rows..."
+                className="w-full h-64 p-4 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm font-mono whitespace-pre"
+              ></textarea>
+            </div>
+
+            <div className="p-5 border-t border-gray-100 flex gap-3">
+              <button onClick={() => setIsBulkModalOpen(false)} className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-900 font-bold rounded-xl flex-1">Cancel</button>
+              <button onClick={handleBulkImport} className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex-1 flex justify-center items-center gap-2">
+                <Upload className="w-5 h-5" /> Import Data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DETAIL MODAL WITH WHATSAPP SHARE */}
       {selectedRecord && (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col relative">
             <div className="bg-blue-600 p-4 md:p-6 text-white flex justify-between items-center shrink-0">
               <div>
-                <h2 className="text-2xl font-bold mb-1">Blast Report: {selectedRecord.face}</h2>
-                <p className="text-blue-100 text-sm font-medium flex items-center gap-3">
+                <h2 className="text-2xl font-black mb-1">Blast Report: {selectedRecord.face}</h2>
+                <p className="text-blue-100 text-sm font-semibold flex items-center gap-3">
                   <span className="flex items-center gap-1"><Calendar className="w-4 h-4"/> {new Date(selectedRecord.date).toLocaleDateString('en-IN')}</span>
                   <span className="flex items-center gap-1"><Clock className="w-4 h-4"/> {selectedRecord.blastingTime}</span>
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                {/* WhatsApp Share Button Added Here */}
                 <button 
                   onClick={() => shareToWhatsApp(selectedRecord)} 
                   className="bg-[#25D366] hover:bg-[#128C7E] text-white flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-colors shadow-sm text-sm"
@@ -458,46 +612,46 @@ Blasting Time : ${record.blastingTime}`
 
             <div className="p-6 md:p-8 overflow-y-auto flex-grow bg-gray-50 space-y-6">
               
-              <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 border-b border-gray-100 pb-2">Holes & Parameters</h3>
+              <div className="bg-white border-2 border-gray-200 rounded-xl p-5 shadow-sm">
+                <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4 border-b border-gray-100 pb-2">Holes & Parameters</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 gap-y-6">
-                  <div><p className="text-xs text-gray-500">No of Holes (Main / Pilot)</p><p className="font-bold text-gray-900">{selectedRecord.holesMain} / {selectedRecord.holesPilot}</p></div>
-                  <div><p className="text-xs text-gray-500">Avg Depth (Main / Pilot)</p><p className="font-bold text-gray-900">{selectedRecord.depthMain}m / {selectedRecord.depthPilot}m</p></div>
-                  <div><p className="text-xs text-gray-500">Stemming (Main / Pilot)</p><p className="font-bold text-gray-900">{selectedRecord.stemmingMain}m / {selectedRecord.stemmingPilot}m</p></div>
-                  <div><p className="text-xs text-gray-500">Bench Height</p><p className="font-bold text-gray-900">{selectedRecord.benchHeight} m</p></div>
-                  <div><p className="text-xs text-gray-500">Burden</p><p className="font-bold text-gray-900">{selectedRecord.burden} m</p></div>
-                  <div><p className="text-xs text-gray-500">Spacing</p><p className="font-bold text-gray-900">{selectedRecord.spacing} m</p></div>
-                  <div><p className="text-xs text-gray-500">Volume</p><p className="font-bold text-blue-700">{selectedRecord.volume.toLocaleString('en-IN')} Cum</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">No of Holes (Main/Pilot)</p><p className="font-black text-gray-900">{selectedRecord.holesMain} / {selectedRecord.holesPilot}</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">Avg Depth (Main/Pilot)</p><p className="font-black text-gray-900">{selectedRecord.depthMain}m / {selectedRecord.depthPilot}m</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">Stemming (Main/Pilot)</p><p className="font-black text-gray-900">{selectedRecord.stemmingMain}m / {selectedRecord.stemmingPilot}m</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">Bench Height</p><p className="font-black text-gray-900">{selectedRecord.benchHeight} m</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">Burden</p><p className="font-black text-gray-900">{selectedRecord.burden} m</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">Spacing</p><p className="font-black text-gray-900">{selectedRecord.spacing} m</p></div>
+                  <div className="col-span-2"><p className="text-xs font-bold text-gray-500">Volume</p><p className="font-black text-blue-700 text-xl">{selectedRecord.volume.toLocaleString('en-IN')} Cum</p></div>
                 </div>
               </div>
 
-              <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 border-b border-gray-100 pb-2">Explosives & Charge</h3>
+              <div className="bg-white border-2 border-gray-200 rounded-xl p-5 shadow-sm">
+                <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4 border-b border-gray-100 pb-2">Explosives & Charge</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 gap-y-6">
-                  <div><p className="text-xs text-gray-500">CPH (Main / Pilot)</p><p className="font-bold text-gray-900">{selectedRecord.cphMain} / {selectedRecord.cphPilot} Kg</p></div>
-                  <div><p className="text-xs text-gray-500">MCD (Main / Pilot)</p><p className="font-bold text-gray-900">{selectedRecord.mcdMain} / {selectedRecord.mcdPilot} Kg</p></div>
-                  <div><p className="text-xs text-gray-500">Powder Factor (Pf)</p><p className="font-bold text-emerald-600">{selectedRecord.pf} kg/cum</p></div>
-                  <div><p className="text-xs text-gray-500">Charge Factor (Cf)</p><p className="font-bold text-emerald-600">{selectedRecord.cf} cum/kg</p></div>
-                  <div className="col-span-2 md:col-span-4 bg-orange-50 border border-orange-100 p-3 rounded-lg">
-                    <p className="text-xs text-orange-600 font-bold uppercase">Total Explosive</p>
-                    <p className="text-2xl font-black text-orange-700">{selectedRecord.explosiveQty.toLocaleString('en-IN')} Kg</p>
+                  <div><p className="text-xs font-bold text-gray-500">CPH (Main / Pilot)</p><p className="font-black text-gray-900">{selectedRecord.cphMain} / {selectedRecord.cphPilot} Kg</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">MCD (Main / Pilot)</p><p className="font-black text-gray-900">{selectedRecord.mcdMain} / {selectedRecord.mcdPilot} Kg</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">Powder Factor (Pf)</p><p className="font-black text-emerald-600">{selectedRecord.pf} kg/cum</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">Charge Factor (Cf)</p><p className="font-black text-emerald-600">{selectedRecord.cf} cum/kg</p></div>
+                  <div className="col-span-2 md:col-span-4 bg-orange-50 border-2 border-orange-200 p-4 rounded-xl flex justify-between items-center">
+                    <p className="text-sm text-orange-800 font-black uppercase">Total Explosive</p>
+                    <p className="text-3xl font-black text-orange-700">{selectedRecord.explosiveQty.toLocaleString('en-IN')} Kg</p>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 border-b border-gray-100 pb-2">Accessories & Environment</h3>
+              <div className="bg-white border-2 border-gray-200 rounded-xl p-5 shadow-sm">
+                <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4 border-b border-gray-100 pb-2">Accessories & Environment</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 gap-y-6">
-                  <div><p className="text-xs text-gray-500">NTD (17ms/25ms/42ms)</p><p className="font-bold text-gray-900">{selectedRecord.ntd17} / {selectedRecord.ntd25} / {selectedRecord.ntd42}</p></div>
-                  <div><p className="text-xs text-gray-500">NTD Lead (17/25/42)</p><p className="font-bold text-gray-900">{selectedRecord.ntdLead17} / {selectedRecord.ntdLead25} / {selectedRecord.ntdLead42}</p></div>
-                  <div><p className="text-xs text-gray-500">SURE BLAST / Ikon</p><p className="font-bold text-gray-900">{selectedRecord.sureBlast} / {selectedRecord.ikon}</p></div>
-                  <div><p className="text-xs text-gray-500">Booster</p><p className="font-bold text-gray-900">{selectedRecord.booster} Kg</p></div>
-                  <div><p className="text-xs text-gray-500">Density (Init / Final)</p><p className="font-bold text-gray-900">{selectedRecord.initialDensity} / {selectedRecord.finalDensity}</p></div>
-                  <div><p className="text-xs text-gray-500">DTH (10m / 6m)</p><p className="font-bold text-gray-900">{selectedRecord.dth10m} / {selectedRecord.dth6m}</p></div>
-                  <div><p className="text-xs text-gray-500">Vibration</p><p className="font-bold text-red-600">{selectedRecord.vibration} mm/s</p></div>
-                  <div><p className="text-xs text-gray-500">DB Level / Dist</p><p className="font-bold text-gray-900">{selectedRecord.db} / {selectedRecord.distance} m</p></div>
-                  <div><p className="text-xs text-gray-500">Location</p><p className="font-bold text-gray-900">{selectedRecord.location}</p></div>
-                  <div><p className="text-xs text-gray-500">Man Power</p><p className="font-bold text-gray-900">{selectedRecord.manPower}</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">NTD (17/25/42)</p><p className="font-black text-gray-900">{selectedRecord.ntd17} / {selectedRecord.ntd25} / {selectedRecord.ntd42}</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">NTD Lead (17/25/42)</p><p className="font-black text-gray-900">{selectedRecord.ntdLead17} / {selectedRecord.ntdLead25} / {selectedRecord.ntdLead42}</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">SURE BLAST / Ikon</p><p className="font-black text-gray-900">{selectedRecord.sureBlast} / {selectedRecord.ikon}</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">Booster</p><p className="font-black text-gray-900">{selectedRecord.booster} Kg</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">Density (Init / Final)</p><p className="font-black text-gray-900">{selectedRecord.initialDensity} / {selectedRecord.finalDensity}</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">DTH (10m / 6m)</p><p className="font-black text-gray-900">{selectedRecord.dth10m} / {selectedRecord.dth6m}</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">Vibration</p><p className="font-black text-red-600">{selectedRecord.vibration} mm/s</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">DB Level / Dist</p><p className="font-black text-gray-900">{selectedRecord.db} / {selectedRecord.distance} m</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">Exact Location</p><p className="font-black text-gray-900">{selectedRecord.location}</p></div>
+                  <div><p className="text-xs font-bold text-gray-500">Man Power</p><p className="font-black text-gray-900">{selectedRecord.manPower}</p></div>
                 </div>
               </div>
             </div>
