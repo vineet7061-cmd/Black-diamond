@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import Navigation from '@/components/Navigation'
-import { Plus, Trash2, Zap, MapPin, Calendar, Clock, X, MessageCircle, Upload, Filter, FileSpreadsheet } from 'lucide-react'
+import { Plus, Trash2, Zap, MapPin, Calendar, Clock, X, MessageCircle, Upload, Filter, FileSpreadsheet, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
@@ -49,19 +49,14 @@ interface BlastRecord {
   blastingTime: string
 }
 
-// Smart function to handle DD/MM/YYYY or YYYY-MM-DD dates
 const parseDateString = (rawDate: any) => {
   if (!rawDate) return new Date().toISOString().split('T')[0]
-  
-  // Handles Excel serial date numbers
   if (typeof rawDate === 'number') {
     const jsDate = new Date((rawDate - (25567 + 2)) * 86400 * 1000)
     return jsDate.toISOString().split('T')[0]
   }
-
   const clean = String(rawDate).trim()
   const parts = clean.includes('/') ? clean.split('/') : clean.split('-')
-  
   if (parts.length === 3) {
     if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
     if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
@@ -70,6 +65,7 @@ const parseDateString = (rawDate: any) => {
 }
 
 function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCancel: () => void }) {
+  const [pasteText, setPasteText] = useState('')
   const [formData, setFormData] = useState<Partial<BlastRecord>>({
     date: new Date().toISOString().split('T')[0],
     blastingTime: '14:30', face: '', location: '',
@@ -85,6 +81,80 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
     dth10m: 0, dth6m: 0,
     vibration: 0, db: 0, distance: 0, manPower: 0
   })
+
+  // 🚀 SMART TEXT EXTRACTOR (WhatsApp/Message Parser) 🚀
+  const handleTextPaste = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const text = e.target.value
+    setPasteText(text)
+
+    if (!text.trim()) return
+
+    // Split for normal NTDs vs Lead NTDs to prevent confusion
+    const parts = text.split(/NTD used for lead/i)
+    const mainText = parts[0] || text
+    const leadText = parts[1] || ''
+
+    const extractNum = (source: string, regex: RegExp, defaultVal = 0) => {
+      const match = source.match(regex)
+      return match && match[1] && !isNaN(parseFloat(match[1])) ? parseFloat(match[1]) : defaultVal
+    }
+
+    const extractStr = (source: string, regex: RegExp, defaultVal = '') => {
+      const match = source.match(regex)
+      return match && match[1] ? match[1].trim() : defaultVal
+    }
+
+    // Date Format Correction
+    let parsedDate = formData.date
+    const dateMatch = text.match(/Date\s*-\s*([0-9/]+)/i)
+    if (dateMatch && dateMatch[1]) {
+      const dParts = dateMatch[1].trim().split('/')
+      if (dParts.length === 3) parsedDate = `${dParts[2]}-${dParts[1].padStart(2, '0')}-${dParts[0].padStart(2, '0')}`
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      date: parsedDate,
+      face: extractStr(mainText, /Face\s*-\s*(.+)/i, prev.face),
+      location: extractStr(mainText, /Location\s*-\s*(.+)/i, prev.location),
+      blastingTime: extractStr(mainText, /Blasting Time\s*:\s*-\s*(.+)/i, prev.blastingTime),
+      
+      holesMain: extractNum(mainText, /Main\s*-\s*([\d.]+)/i, prev.holesMain),
+      holesPilot: extractNum(mainText, /pilot\s*-\s*([\d.]+)/i, prev.holesPilot),
+      benchHeight: extractNum(mainText, /Bench height\s*-\s*([\d.]+)/i, prev.benchHeight),
+      depthMain: extractNum(mainText, /Avg\.Depth\s*-\s*([\d.]+)/i, prev.depthMain),
+      burden: extractNum(mainText, /Burden\s*-\s*([\d.]+)/i, prev.burden),
+      spacing: extractNum(mainText, /Spacing\s*-\s*([\d.]+)/i, prev.spacing),
+      stemmingMain: extractNum(mainText, /Stemming\s*-\s*([\d.]+)/i, prev.stemmingMain),
+      
+      cphMain: extractNum(mainText, /CPH\s*-\s*([\d.]+)/i, prev.cphMain),
+      mcdMain: extractNum(mainText, /MCD\s*-\s*([\d.]+)/i, prev.mcdMain),
+      explosiveQty: extractNum(mainText, /Explosive\s*-\s*([\d.]+)/i, prev.explosiveQty),
+      volume: extractNum(mainText, /Volume\s*-\s*([\d.]+)/i, prev.volume),
+      pf: extractNum(mainText, /Pf-\s*([\d.]+)/i, prev.pf),
+      cf: extractNum(mainText, /Cf-\s*([\d.]+)/i, prev.cf),
+
+      ntd17: extractNum(mainText, /17\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd17),
+      ntd25: extractNum(mainText, /25\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd25),
+      ntd42: extractNum(mainText, /42\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd42),
+
+      ntdLead17: extractNum(leadText, /17\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead17),
+      ntdLead25: extractNum(leadText, /25\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead25),
+      ntdLead42: extractNum(leadText, /42\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead42),
+
+      sureBlast: extractNum(mainText, /Sure blast-\s*([\d.]+)/i, prev.sureBlast),
+      ikon: extractNum(mainText, /Ikon\s*-\s*([\d.]+)/i, prev.ikon),
+      initialDensity: extractNum(mainText, /Initial density\s*-\s*([\d.]+)/i, prev.initialDensity),
+      finalDensity: extractNum(mainText, /Final density\s*-\s*([\d.]+)/i, prev.finalDensity),
+      booster: extractNum(mainText, /Booster-\s*([\d.]+)/i, prev.booster),
+      dth10m: extractNum(mainText, /DTH\s*\(10m\)\s*-\s*([\d.]+)/i, prev.dth10m),
+      dth6m: extractNum(mainText, /DTH\s*\(6m\)\s*-\s*([\d.]+)/i, prev.dth6m),
+      vibration: extractNum(mainText, /Vibration\s*-\s*([\d.]+)/i, prev.vibration),
+      db: extractNum(mainText, /Peak Overpressure\s*-\s*([\d.]+)/i, prev.db),
+      distance: extractNum(mainText, /Distance\s*-\s*([\d.]+)/i, prev.distance),
+      manPower: extractNum(mainText, /Man power\s*-\s*([\d.]+)/i, prev.manPower),
+    }))
+  }
 
   const handleInput = (field: keyof BlastRecord, value: string | number) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -113,6 +183,21 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
   return (
     <div className="p-4">
       <form onSubmit={handleSubmit} className="space-y-6">
+        
+        {/* TEXT PASTE AREA FOR AUTO-FILL */}
+        <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-4">
+          <label className="block text-sm font-bold text-emerald-800 mb-2 flex items-center gap-2">
+            <Copy className="w-4 h-4" /> Paste Message Details (Auto-Fill)
+          </label>
+          <textarea
+            value={pasteText}
+            onChange={handleTextPaste}
+            placeholder={`Date - 01/07/2026\nFace - XOB-1\nNo of Holes - 54\nMain - 46\n...`}
+            className="w-full h-28 px-4 py-3 bg-white border border-emerald-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-emerald-600 outline-none"
+          ></textarea>
+          <p className="text-xs text-emerald-600 font-semibold mt-2">Format paste karte hi neechay ka form khud bhar jayega.</p>
+        </div>
+
         <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
           <h3 className="font-bold text-blue-800 mb-3 text-sm flex items-center gap-1"><MapPin className="w-4 h-4"/> Basic Info</h3>
           <div className="grid grid-cols-2 gap-4">
@@ -244,7 +329,6 @@ export default function BlastPage() {
     await supabase.from('blast_reports').insert([newEntry])
   }
 
-  // 🚀 EXCEL FILE UPLOAD LOGIC 🚀
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -267,7 +351,6 @@ export default function BlastPage() {
         }
 
         const formattedEntries: BlastRecord[] = jsonData.map((row) => {
-          // Helper to get case-insensitive column values
           const getCol = (keyNames: string[]) => {
             const foundKey = Object.keys(row).find(k => 
               keyNames.some(kn => k.toLowerCase().replace(/[^a-z0-9]/g, '') === kn.toLowerCase().replace(/[^a-z0-9]/g, ''))
@@ -318,7 +401,6 @@ export default function BlastPage() {
           }
         })
 
-        // Save to Supabase
         const { error } = await supabase.from('blast_reports').insert(formattedEntries)
         if (error) {
           alert("Database saving error: " + error.message)
@@ -378,7 +460,6 @@ export default function BlastPage() {
               </select>
             </div>
             
-            {/* UPLOAD EXCEL BUTTON */}
             <Button onClick={() => setIsExcelModalOpen(true)} variant="outline" className="border-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-bold px-4 py-6 rounded-xl">
               <FileSpreadsheet className="w-5 h-5 mr-2" /> Upload Excel File
             </Button>
@@ -439,7 +520,7 @@ export default function BlastPage() {
         )}
       </main>
 
-      {/* FORM MODAL */}
+      {/* FORM MODAL WITH AUTO FILL BOX */}
       {isFormModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
