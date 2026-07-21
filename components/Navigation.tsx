@@ -44,9 +44,13 @@ export default function Navigation() {
       {/* Fixed Top Navigation Bar (Header) */}
       <div className="fixed top-0 left-0 right-0 bg-white border-b-2 border-gray-200 shadow-sm h-16 md:h-20 flex items-center px-3 md:px-8 z-50 justify-between">
         <div className="flex items-center gap-2 md:gap-3 shrink min-w-0">
-          <div className="bg-blue-600 p-1.5 md:p-2 rounded-lg shrink-0">
-            <Truck className="w-5 h-5 md:w-6 md:h-6 text-white" />
-          </div>
+          <div className="w-12 h-12 flex-shrink-0 overflow-hidden rounded-lg">
+  <img 
+    src="/Logo.jpg" 
+    alt="Company Logo" 
+    className="w-full h-full object-contain" 
+  />
+</div>
           <div className="shrink min-w-0 pr-2">
             <h1 className="font-bold text-sm md:text-lg text-gray-900 truncate">BLACK DIAMOND EXPLOSIVE PVT LTD</h1>
             <p className="text-[13px] md:text-xs text-gray-600 truncate">TATA STEEL WEST BOKARO</p>
