@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import Navigation from '@/components/Navigation'
-import { Plus, Upload, Calendar, Trash2, FileText, CheckCircle, X, Truck, Image as ImageIcon } from 'lucide-react'
+import { Plus, Upload, Calendar, Trash2, FileText, CheckCircle, X, Truck, Image as ImageIcon, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
+import { GoogleGenerativeAI } from "@google/generative-ai"
 
 interface WeighmentRecord {
   id: string
@@ -31,6 +32,7 @@ function WeighmentForm({ onSubmit, onCancel, isSubmitting }: { onSubmit: (data: 
     tareWeight: '',
   })
   const [slipFile, setSlipFile] = useState<File | null>(null)
+  const [isScanning, setIsScanning] = useState(false)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -41,11 +43,111 @@ function WeighmentForm({ onSubmit, onCancel, isSubmitting }: { onSubmit: (data: 
     ? parseFloat(formData.grossWeight) - parseFloat(formData.tareWeight)
     : 0
 
+  // 🚀 AI SCANNER LOGIC 🚀
+  const handleAIScan = async () => {
+    if (!slipFile) return
+    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
+    if (!apiKey) {
+      alert("API Key missing! Please add NEXT_PUBLIC_GEMINI_API_KEY in .env.local")
+      return
+    }
+
+    setIsScanning(true)
+    try {
+      const reader = new FileReader()
+      reader.readAsDataURL(slipFile)
+      
+      reader.onload = async () => {
+        try {
+          const base64Data = (reader.result as string).split(',')[1]
+          const genAI = new GoogleGenerativeAI(apiKey)
+          const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
+
+          const prompt = `Analyze this weighment slip. Extract these details and return ONLY a valid JSON object without any markdown tags or backticks.
+          Schema format:
+          {
+            "challanNo": "extracted challan or card number (string)",
+            "truckNo": "extracted truck number without spaces (e.g. JH10CS0138)",
+            "grossWeight": "only the number for Gross Weight",
+            "tareWeight": "only the number for Tare Weight",
+            "date": "format as YYYY-MM-DD if available"
+          }
+          If any value is missing or unreadable, leave it as an empty string.`
+
+          const result = await model.generateContent([
+            prompt,
+            { inlineData: { data: base64Data, mimeType: slipFile.type } }
+          ])
+
+          const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim()
+          const parsed = JSON.parse(text)
+
+          setFormData(prev => ({
+            ...prev,
+            challanNo: parsed.challanNo || prev.challanNo,
+            truckNo: parsed.truckNo || prev.truckNo,
+            grossWeight: parsed.grossWeight ? String(parsed.grossWeight) : prev.grossWeight,
+            tareWeight: parsed.tareWeight ? String(parsed.tareWeight) : prev.tareWeight,
+            date: parsed.date || prev.date,
+          }))
+          alert("✨ AI ne details nikal li hain! Form check kar le.")
+        } catch (err) {
+          console.error("AI parsing error:", err)
+          alert("AI data thik se nahi padh paya. Slip clear nahi hogi, manual type kar le.")
+        } finally {
+          setIsScanning(false)
+        }
+      }
+    } catch (error) {
+      console.error(error)
+      alert("System error reading file.")
+      setIsScanning(false)
+    }
+  }
+
   return (
     <div className="p-2">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Strictly 2-Column Form Layout */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          
+          {/* Slip Upload is moved to the TOP so AI can scan first */}
+          <div className="col-span-1 md:col-span-2 mb-2">
+            <label className="block text-sm font-semibold text-gray-900 mb-1.5">1. Upload Weighment Slip (For AI Auto-Fill)</label>
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50 hover:bg-gray-100 transition-colors">
+              <input
+                type="file"
+                id="slip-upload"
+                accept="image/*,.pdf"
+                className="hidden"
+                onChange={(e) => setSlipFile(e.target.files ? e.target.files[0] : null)}
+              />
+              <label htmlFor="slip-upload" className="cursor-pointer flex flex-col items-center gap-2">
+                <Upload className={`w-8 h-8 ${slipFile ? 'text-emerald-600' : 'text-blue-600'}`} />
+                <span className="text-sm font-semibold text-gray-700">
+                  {slipFile ? slipFile.name : 'Click to upload slip photo'}
+                </span>
+              </label>
+            </div>
+            
+            {/* AI SCAN BUTTON (Appears only after file is selected) */}
+            {slipFile && (
+              <button
+                type="button"
+                onClick={handleAIScan}
+                disabled={isScanning}
+                className={`w-full mt-3 flex items-center justify-center gap-2 py-3 rounded-lg font-bold text-white shadow-md transition-all ${isScanning ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+              >
+                {isScanning ? <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div> : <Sparkles className="w-5 h-5" />}
+                {isScanning ? 'AI is scanning your slip...' : '✨ Auto-Fill Form with AI'}
+              </button>
+            )}
+          </div>
+
+          <div className="col-span-1 md:col-span-2">
+            <div className="h-px bg-gray-200 my-2"></div>
+            <p className="text-xs text-gray-500 font-bold uppercase mb-2">2. Verify Details</p>
+          </div>
+
           <div>
             <label className="block text-sm font-semibold text-gray-900 mb-1.5">Date</label>
             <input
@@ -73,7 +175,7 @@ function WeighmentForm({ onSubmit, onCancel, isSubmitting }: { onSubmit: (data: 
             <label className="block text-sm font-semibold text-gray-900 mb-1.5">Truck No.</label>
             <input
               type="text"
-              placeholder="e.g. JH10CS-0138"
+              placeholder="e.g. JH10CS0138"
               value={formData.truckNo}
               onChange={(e) => setFormData({ ...formData, truckNo: e.target.value.toUpperCase() })}
               className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-blue-600 uppercase"
@@ -133,25 +235,6 @@ function WeighmentForm({ onSubmit, onCancel, isSubmitting }: { onSubmit: (data: 
               required
             />
           </div>
-
-          <div className="col-span-1 md:col-span-2 mt-2">
-            <label className="block text-sm font-semibold text-gray-900 mb-1.5">Upload Weighment Slip (Photo)</label>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50 hover:bg-gray-100 transition-colors">
-              <input
-                type="file"
-                id="slip-upload"
-                accept="image/*,.pdf"
-                className="hidden"
-                onChange={(e) => setSlipFile(e.target.files ? e.target.files[0] : null)}
-              />
-              <label htmlFor="slip-upload" className="cursor-pointer flex flex-col items-center gap-2">
-                <Upload className={`w-8 h-8 ${slipFile ? 'text-emerald-600' : 'text-blue-600'}`} />
-                <span className="text-sm font-semibold text-gray-700">
-                  {slipFile ? slipFile.name : 'Click to upload slip photo or PDF'}
-                </span>
-              </label>
-            </div>
-          </div>
         </div>
 
         {netWeight > 0 && (
@@ -167,12 +250,12 @@ function WeighmentForm({ onSubmit, onCancel, isSubmitting }: { onSubmit: (data: 
           <button
             type="button"
             onClick={onCancel}
-            disabled={isSubmitting}
+            disabled={isSubmitting || isScanning}
             className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold rounded-lg transition-colors flex-1 disabled:opacity-50"
           >
             Cancel
           </button>
-          <Button type="submit" disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex-1 disabled:opacity-50">
+          <Button type="submit" disabled={isSubmitting || isScanning} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex-1 disabled:opacity-50">
             {isSubmitting ? 'Uploading & Saving...' : 'Save Entry'}
           </Button>
         </div>
@@ -186,7 +269,7 @@ export default function WeighmentPage() {
   const [isFormModalOpen, setIsFormModalOpen] = useState(false)
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isUpdatingImage, setIsUpdatingImage] = useState(false) // New state for in-modal upload
+  const [isUpdatingImage, setIsUpdatingImage] = useState(false) 
   const [isLoading, setIsLoading] = useState(true)
 
   const fetchRecords = async () => {
@@ -270,7 +353,6 @@ export default function WeighmentPage() {
     setIsSubmitting(false)
   }
 
-  // Handle Image Upload inside the Modal
   const handleUpdateImage = async (id: string, file: File) => {
     setIsUpdatingImage(true)
     const photoUrl = await uploadToCloudinary(file)
@@ -325,10 +407,10 @@ export default function WeighmentPage() {
           </div>
           <Button 
             onClick={() => setIsFormModalOpen(true)} 
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-6 rounded-xl shadow-md w-full md:w-auto"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-6 rounded-xl shadow-md w-full md:w-auto flex items-center gap-2"
           >
-            <Plus className="w-5 h-5 mr-2" />
-            Add New Entry
+            <Sparkles className="w-5 h-5" />
+            Add New (AI Auto-Fill)
           </Button>
         </div>
 
@@ -354,7 +436,6 @@ export default function WeighmentPage() {
                     </span>
                   </div>
 
-                  {/* Strictly 2-Column Grid for List Items */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {dateRecords.map((record) => (
                       <div 
@@ -402,7 +483,7 @@ export default function WeighmentPage() {
               <div className="col-span-full text-center py-16 border-2 border-dashed border-gray-200 rounded-xl text-gray-500">
                 <Truck className="w-12 h-12 mx-auto text-gray-300 mb-3" />
                 <p className="font-semibold text-lg text-gray-700">No entries yet</p>
-                <p className="text-sm mt-1">Click on "Add New Entry" to get started.</p>
+                <p className="text-sm mt-1">Click on "Add New (AI Auto-Fill)" to get started.</p>
               </div>
             )}
           </div>
@@ -415,7 +496,7 @@ export default function WeighmentPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative">
             <div className="sticky top-0 bg-white border-b border-gray-100 p-5 flex items-center justify-between z-10">
               <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <Plus className="w-5 h-5 text-blue-600" /> Add New Weighment
+                <Sparkles className="w-5 h-5 text-indigo-600" /> Add New Weighment
               </h2>
               <button 
                 onClick={() => setIsFormModalOpen(false)} 
