@@ -64,7 +64,7 @@ const parseDateString = (rawDate: any) => {
   return clean
 }
 
-function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCancel: () => void }) {
+function BlastForm({ onSubmit, onCancel, isSaving }: { onSubmit: (data: any) => void, onCancel: () => void, isSaving: boolean }) {
   const [pasteText, setPasteText] = useState('')
   const [formData, setFormData] = useState<Partial<BlastRecord>>({
     date: new Date().toISOString().split('T')[0],
@@ -117,7 +117,7 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
       blastingTime: extractStr(text, /Blasting Time\s*[:\-]*\s*([^\n]+)/i, prev.blastingTime),
       
       holesMain: extractNum(text, /Main\s*-\s*([\d.]+)/i, prev.holesMain),
-      holesPilot: extractNum(text, /pilot\s*-\s*([\d.]+)/i, 0), // Agar nahi mila toh 0 lega
+      holesPilot: extractNum(text, /pilot\s*-\s*([\d.]+)/i, 0),
       benchHeight: extractNum(text, /Bench height\s*-\s*([\d.]+)/i, prev.benchHeight),
       depthMain: extractNum(text, /Avg\.Depth\s*-\s*([\d.]+)/i, prev.depthMain),
       burden: extractNum(text, /Burden\s*-\s*([\d.]+)/i, prev.burden),
@@ -162,7 +162,6 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
     onSubmit(formData)
   }
 
-  // REQUIRED PROP ADD KIYA HAI, DEFAULT FALSE HAI
   const InputField = ({ label, field, type = "number", step = "any", placeholder = "0", isRequired = false }: any) => (
     <div>
       <label className="block text-[11px] font-bold text-gray-600 mb-1 uppercase tracking-wider">{label}</label>
@@ -170,10 +169,11 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
         type={type}
         step={step}
         placeholder={placeholder}
-        value={formData[field as keyof BlastRecord] ?? ''} // 0 ko empty nahi karega, proper 0 dikhayega
+        value={formData[field as keyof BlastRecord] ?? ''} 
         onChange={(e) => handleInput(field, type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value)}
         className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:ring-2 focus:ring-blue-600"
         required={isRequired}
+        disabled={isSaving}
       />
     </div>
   )
@@ -191,8 +191,8 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
             onChange={handleTextPaste}
             placeholder={`Date - 01/07/2026\nFace - XOB-1\nNo of Holes - 54...`}
             className="w-full h-28 px-4 py-3 bg-white border border-emerald-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-emerald-600 outline-none"
+            disabled={isSaving}
           ></textarea>
-          <p className="text-xs text-emerald-600 font-semibold mt-2">Agar Pilot data text mein nahi hai, toh automatic 0 le lega aur error nahi dega.</p>
         </div>
 
         <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
@@ -274,8 +274,10 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
         </div>
 
         <div className="flex gap-3 pt-4 border-t border-gray-100">
-          <button type="button" onClick={onCancel} className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold rounded-lg flex-1">Cancel</button>
-          <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex-1">Save Blast Report</Button>
+          <button type="button" onClick={onCancel} disabled={isSaving} className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold rounded-lg flex-1 disabled:opacity-50">Cancel</button>
+          <Button type="submit" disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex-1 disabled:opacity-50">
+            {isSaving ? 'Saving to Database...' : 'Save Blast Report'}
+          </Button>
         </div>
       </form>
     </div>
@@ -290,6 +292,7 @@ export default function BlastPage() {
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
   const [selectedMonth, setSelectedMonth] = useState<string>('')
   const [uploading, setUploading] = useState(false)
+  const [isSaving, setIsSaving] = useState(false) // Added saving state
 
   const fetchRecords = async () => {
     setIsLoading(true)
@@ -319,14 +322,25 @@ export default function BlastPage() {
     return date.toLocaleString('default', { month: 'long', year: 'numeric' })
   }
 
+  // 🚀 FIXED: Wait for DB Insert BEFORE updating UI 🚀
   const handleNewEntry = async (data: any) => {
+    setIsSaving(true)
     const newEntry = { ...data, date: parseDateString(data.date), id: Math.random().toString(36).substr(2, 9) }
-    setRecords([newEntry, ...records])
-    setIsFormModalOpen(false)
-    await supabase.from('blast_reports').insert([newEntry])
+    
+    const { error } = await supabase.from('blast_reports').insert([newEntry])
+    
+    if (error) {
+      alert("❌ ERROR SAVING TO DATABASE:\n" + error.message + "\n\n(Supabase dashboard me check karo column names ya RLS settings)")
+    } else {
+      setRecords([newEntry, ...records])
+      setIsFormModalOpen(false)
+      alert("✅ Data successfully saved!")
+    }
+    setIsSaving(false)
   }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Keeping your previous solid Excel logic intact
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -522,9 +536,9 @@ export default function BlastPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-100 p-5 flex items-center justify-between z-10">
               <h2 className="text-xl font-bold flex items-center gap-2"><Plus className="w-6 h-6 text-blue-600" /> Enter Blast Report</h2>
-              <button onClick={() => setIsFormModalOpen(false)} className="p-2 bg-gray-50 rounded-full"><X className="w-5 h-5" /></button>
+              <button onClick={() => setIsFormModalOpen(false)} disabled={isSaving} className="p-2 bg-gray-50 rounded-full disabled:opacity-50"><X className="w-5 h-5" /></button>
             </div>
-            <BlastForm onSubmit={handleNewEntry} onCancel={() => setIsFormModalOpen(false)} />
+            <BlastForm onSubmit={handleNewEntry} onCancel={() => setIsFormModalOpen(false)} isSaving={isSaving} />
           </div>
         </div>
       )}
