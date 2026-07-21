@@ -65,7 +65,7 @@ export default function EcciAndSalePage() {
     fetchRecords()
   }, [])
 
-  // 2. Smart Excel File Upload (Specifically Built for Your Format)
+  // 2. Smart Excel File Upload (Super Scanner)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selectedMonth) {
       alert("Please select a Month from the top before uploading the file!")
@@ -91,22 +91,31 @@ export default function EcciAndSalePage() {
         
         let headerRowIndex = -1
         
-        // Find the exact row that has 'DATE' and 'CHALAN NO.'
+        // SMART HEADER FINDER: Cleans every cell before checking
         for (let i = 0; i < rawData.length; i++) {
           const row: any = rawData[i]
-          if (row && row.includes('DATE') && row.includes('CHALAN NO.')) {
+          if (!row || !Array.isArray(row)) continue
+          
+          // Make all text uppercase and trim spaces to catch sneaky hidden characters
+          const cleanRow = row.map(cell => String(cell || '').toUpperCase().trim())
+          
+          // Check if this row has DATE and CHALAN NO
+          const hasDate = cleanRow.includes('DATE')
+          const hasChalan = cleanRow.some(c => c.includes('CHALAN'))
+          
+          if (hasDate && hasChalan) {
             headerRowIndex = i
             break
           }
         }
 
         if (headerRowIndex === -1) {
-          alert("Could not find headers 'DATE' and 'CHALAN NO.' in the sheet. Please check your file.")
+          alert("Could not find headers 'DATE' and 'CHALAN NO.' in the sheet. Please ensure they exist.")
           setIsUploading(false)
           return
         }
 
-        // Extract headers and normalize them (lowercase, remove spaces)
+        // Extract headers and normalize them (lowercase, remove all spaces and special chars)
         const headers = (rawData[headerRowIndex] as string[]).map(h => 
           h ? h.toString().toLowerCase().replace(/[^a-z0-9]/g, '') : ''
         )
