@@ -2,10 +2,11 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import Navigation from '@/components/Navigation'
-import { Plus, Trash2, Zap, MapPin, Calendar, Clock, X, MessageCircle, Upload, Filter, FileSpreadsheet, Copy } from 'lucide-react'
+import { Plus, Trash2, Zap, MapPin, Calendar, Clock, X, MessageCircle, Upload, Filter, FileSpreadsheet, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
+import { GoogleGenerativeAI } from "@google/generative-ai"
 
 interface BlastRecord {
   id: string
@@ -66,6 +67,7 @@ const parseDateString = (rawDate: any) => {
 
 function BlastForm({ onSubmit, onCancel, isSaving }: { onSubmit: (data: any) => void, onCancel: () => void, isSaving: boolean }) {
   const [pasteText, setPasteText] = useState('')
+  const [isScanning, setIsScanning] = useState(false)
   const [formData, setFormData] = useState<Partial<BlastRecord>>({
     date: new Date().toISOString().split('T')[0],
     blastingTime: '14:30', face: '', location: '',
@@ -82,75 +84,86 @@ function BlastForm({ onSubmit, onCancel, isSaving }: { onSubmit: (data: any) => 
     vibration: 0, db: 0, distance: 0, manPower: 0
   })
 
-  const handleTextPaste = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const text = e.target.value
-    setPasteText(text)
-
-    if (!text.trim()) return
-
-    const splitIndex = text.toLowerCase().indexOf('ntd used for lead');
-    const firstHalf = splitIndex !== -1 ? text.substring(0, splitIndex) : text;
-    const secondHalf = splitIndex !== -1 ? text.substring(splitIndex) : '';
-
-    const extractNum = (source: string, regex: RegExp, defaultVal = 0) => {
-      const match = source.match(regex)
-      return match && match[1] && !isNaN(parseFloat(match[1])) ? parseFloat(match[1]) : defaultVal
+  // 🚀 AI SMART PARSER (Gemini AI Powered) 🚀
+  const handleAIScan = async () => {
+    if (!pasteText.trim()) {
+      alert("Pehle text box mein report paste kar!")
+      return
     }
 
-    const extractStr = (source: string, regex: RegExp, defaultVal = '') => {
-      const match = source.match(regex)
-      return match && match[1] ? match[1].trim() : defaultVal
+    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
+    if (!apiKey || !apiKey.startsWith('AIza')) {
+      alert("Google Gemini API Key missing or invalid in Vercel settings!")
+      return
     }
 
-    let parsedDate = formData.date
-    const dateMatch = text.match(/Date\s*-\s*([0-9/]+)/i)
-    if (dateMatch && dateMatch[1]) {
-      const dParts = dateMatch[1].trim().split('/')
-      if (dParts.length === 3) parsedDate = `${dParts[2]}-${dParts[1].padStart(2, '0')}-${dParts[0].padStart(2, '0')}`
+    setIsScanning(true)
+    try {
+      const genAI = new GoogleGenerativeAI(apiKey)
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
+
+      const prompt = `Analyze this unformatted blast report text carefully. It may have varying formats, spellings, or missing optional fields (like pilot holes or lead NTDs which should default to 0).
+      Extract the details and return ONLY a valid JSON object without any markdown tags or backticks.
+
+      Keys required in JSON:
+      - "date": string in YYYY-MM-DD format (convert DD/MM/YYYY if found)
+      - "face": string
+      - "location": string
+      - "blastingTime": string (e.g. "2:30 PM")
+      - "holesMain": number
+      - "holesPilot": number (default 0 if missing)
+      - "benchHeight": number
+      - "depthMain": number
+      - "depthPilot": number (default 0)
+      - "burden": number
+      - "spacing": number
+      - "stemmingMain": number
+      - "stemmingPilot": number (default 0)
+      - "cphMain": number
+      - "cphPilot": number (default 0)
+      - "mcdMain": number
+      - "mcdPilot": number (default 0)
+      - "explosiveQty": number
+      - "volume": number
+      - "pf": number
+      - "cf": number
+      - "ntd17": number
+      - "ntd25": number
+      - "ntd42": number
+      - "ntdLead17": number (default 0)
+      - "ntdLead25": number (default 0)
+      - "ntdLead42": number (default 0)
+      - "sureBlast": number (default 0)
+      - "ikon": number (default 0)
+      - "initialDensity": number
+      - "finalDensity": number
+      - "booster": number
+      - "dth10m": number
+      - "dth6m": number
+      - "vibration": number
+      - "db": number (Peak Overpressure)
+      - "distance": number
+      - "manPower": number
+
+      Here is the text to analyze:
+      ${pasteText}`
+
+      const result = await model.generateContent(prompt)
+      const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim()
+      const parsed = JSON.parse(text)
+
+      setFormData(prev => ({
+        ...prev,
+        ...parsed,
+        date: parseDateString(parsed.date || prev.date)
+      }))
+      alert("✨ AI ne saara data smartly extract kar liya hai!")
+    } catch (err: any) {
+      console.error(err)
+      alert("AI Parsing Error: " + err.message + "\nText format check kar le.")
+    } finally {
+      setIsScanning(false)
     }
-
-    setFormData(prev => ({
-      ...prev,
-      date: parsedDate,
-      face: extractStr(text, /Face\s*-\s*([^\n]+)/i, prev.face),
-      location: extractStr(text, /Location\s*-\s*([^\n]+)/i, prev.location),
-      blastingTime: extractStr(text, /Blasting Time\s*[:\-]*\s*([^\n]+)/i, prev.blastingTime),
-      
-      holesMain: extractNum(text, /Main\s*-\s*([\d.]+)/i, prev.holesMain),
-      holesPilot: extractNum(text, /pilot\s*-\s*([\d.]+)/i, 0),
-      benchHeight: extractNum(text, /Bench height\s*-\s*([\d.]+)/i, prev.benchHeight),
-      depthMain: extractNum(text, /Avg\.Depth\s*-\s*([\d.]+)/i, prev.depthMain),
-      burden: extractNum(text, /Burden\s*-\s*([\d.]+)/i, prev.burden),
-      spacing: extractNum(text, /Spacing\s*-\s*([\d.]+)/i, prev.spacing),
-      stemmingMain: extractNum(text, /Stemming\s*-\s*([\d.]+)/i, prev.stemmingMain),
-      
-      cphMain: extractNum(text, /CPH\s*-\s*([\d.]+)/i, prev.cphMain),
-      mcdMain: extractNum(text, /MCD\s*-\s*([\d.]+)/i, prev.mcdMain),
-      explosiveQty: extractNum(text, /Explosive\s*-\s*([\d.]+)/i, prev.explosiveQty),
-      volume: extractNum(text, /Volume\s*-\s*([\d.]+)/i, prev.volume),
-      pf: extractNum(text, /Pf\s*-\s*([\d.]+)/i, prev.pf),
-      cf: extractNum(text, /Cf\s*-\s*([\d.]+)/i, prev.cf),
-
-      ntd17: extractNum(firstHalf, /17\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd17),
-      ntd25: extractNum(firstHalf, /25\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd25),
-      ntd42: extractNum(firstHalf, /42\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd42),
-
-      ntdLead17: extractNum(secondHalf, /17\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead17),
-      ntdLead25: extractNum(secondHalf, /25\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead25),
-      ntdLead42: extractNum(secondHalf, /42\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead42),
-
-      sureBlast: extractNum(text, /Sure\s*blast\s*-\s*([\d.]+)/i, prev.sureBlast),
-      ikon: extractNum(text, /Ikon\s*-\s*([\d.]+)/i, prev.ikon),
-      initialDensity: extractNum(text, /Initial density\s*-\s*([\d.]+)/i, prev.initialDensity),
-      finalDensity: extractNum(text, /Final density\s*-\s*([\d.]+)/i, prev.finalDensity),
-      booster: extractNum(text, /Booster\s*-\s*([\d.]+)/i, prev.booster),
-      dth10m: extractNum(text, /DTH\s*\(10m\)\s*-\s*([\d.]+)/i, prev.dth10m),
-      dth6m: extractNum(text, /DTH\s*\(6m\)\s*-\s*([\d.]+)/i, prev.dth6m),
-      vibration: extractNum(text, /Vibration\s*-\s*([\d.]+)/i, prev.vibration),
-      db: extractNum(text, /Peak Overpressure\s*-\s*([\d.]+)/i, prev.db),
-      distance: extractNum(text, /Distance\s*-\s*([\d.]+)/i, prev.distance),
-      manPower: extractNum(text, /Man power\s*-\s*([\d.]+)/i, prev.manPower),
-    }))
   }
 
   const handleInput = (field: keyof BlastRecord, value: string | number) => {
@@ -173,7 +186,7 @@ function BlastForm({ onSubmit, onCancel, isSaving }: { onSubmit: (data: any) => 
         onChange={(e) => handleInput(field, type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value)}
         className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:ring-2 focus:ring-blue-600"
         required={isRequired}
-        disabled={isSaving}
+        disabled={isSaving || isScanning}
       />
     </div>
   )
@@ -182,17 +195,29 @@ function BlastForm({ onSubmit, onCancel, isSaving }: { onSubmit: (data: any) => 
     <div className="p-4">
       <form onSubmit={handleSubmit} className="space-y-6">
         
-        <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-4">
-          <label className="block text-sm font-bold text-emerald-800 mb-2 flex items-center gap-2">
-            <Copy className="w-4 h-4" /> Paste Message Details (Auto-Fill)
+        {/* AI SMART SCAN BOX */}
+        <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border-2 border-indigo-200 rounded-xl p-4 shadow-sm">
+          <label className="block text-sm font-bold text-indigo-900 mb-2 flex items-center justify-between">
+            <span className="flex items-center gap-2"><Sparkles className="w-5 h-5 text-indigo-600" /> AI Smart Report Reader</span>
+            <span className="text-xs text-indigo-500 font-semibold">Koi bhi format chalega!</span>
           </label>
           <textarea
             value={pasteText}
-            onChange={handleTextPaste}
-            placeholder={`Date - 01/07/2026\nFace - XOB-1\nNo of Holes - 54...`}
-            className="w-full h-28 px-4 py-3 bg-white border border-emerald-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-emerald-600 outline-none"
-            disabled={isSaving}
+            onChange={(e) => setPasteText(e.target.value)}
+            placeholder={`Yahan apna pura WhatsApp/Text message paste kar...\nDate - 01/07/2026\nFace - XOB-1\nNo of Holes - 54...`}
+            className="w-full h-32 px-4 py-3 bg-white border border-indigo-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-indigo-600 outline-none shadow-inner"
+            disabled={isSaving || isScanning}
           ></textarea>
+          
+          <button
+            type="button"
+            onClick={handleAIScan}
+            disabled={isScanning || isSaving}
+            className={`w-full mt-3 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-white shadow-md transition-all ${isScanning ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+          >
+            {isScanning ? <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div> : <Sparkles className="w-5 h-5" />}
+            {isScanning ? 'AI dimaag laga raha hai...' : '✨ Scan & Auto-Fill with AI'}
+          </button>
         </div>
 
         <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
@@ -274,8 +299,8 @@ function BlastForm({ onSubmit, onCancel, isSaving }: { onSubmit: (data: any) => 
         </div>
 
         <div className="flex gap-3 pt-4 border-t border-gray-100">
-          <button type="button" onClick={onCancel} disabled={isSaving} className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold rounded-lg flex-1 disabled:opacity-50">Cancel</button>
-          <Button type="submit" disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex-1 disabled:opacity-50">
+          <button type="button" onClick={onCancel} disabled={isSaving || isScanning} className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold rounded-lg flex-1 disabled:opacity-50">Cancel</button>
+          <Button type="submit" disabled={isSaving || isScanning} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex-1 disabled:opacity-50">
             {isSaving ? 'Saving to Database...' : 'Save Blast Report'}
           </Button>
         </div>
@@ -292,7 +317,7 @@ export default function BlastPage() {
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
   const [selectedMonth, setSelectedMonth] = useState<string>('')
   const [uploading, setUploading] = useState(false)
-  const [isSaving, setIsSaving] = useState(false) // Added saving state
+  const [isSaving, setIsSaving] = useState(false)
 
   const fetchRecords = async () => {
     setIsLoading(true)
@@ -322,7 +347,6 @@ export default function BlastPage() {
     return date.toLocaleString('default', { month: 'long', year: 'numeric' })
   }
 
-  // 🚀 FIXED: Wait for DB Insert BEFORE updating UI 🚀
   const handleNewEntry = async (data: any) => {
     setIsSaving(true)
     const newEntry = { ...data, date: parseDateString(data.date), id: Math.random().toString(36).substr(2, 9) }
@@ -330,7 +354,7 @@ export default function BlastPage() {
     const { error } = await supabase.from('blast_reports').insert([newEntry])
     
     if (error) {
-      alert("❌ ERROR SAVING TO DATABASE:\n" + error.message + "\n\n(Supabase dashboard me check karo column names ya RLS settings)")
+      alert("❌ ERROR SAVING TO DATABASE:\n" + error.message)
     } else {
       setRecords([newEntry, ...records])
       setIsFormModalOpen(false)
@@ -340,7 +364,6 @@ export default function BlastPage() {
   }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Keeping your previous solid Excel logic intact
     const file = e.target.files?.[0]
     if (!file) return
 
