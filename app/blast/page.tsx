@@ -82,17 +82,17 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
     vibration: 0, db: 0, distance: 0, manPower: 0
   })
 
-  // 🚀 SMART TEXT EXTRACTOR (WhatsApp/Message Parser) 🚀
+  // 🚀 FIXED: SMART TEXT EXTRACTOR (100% Accurate Parser) 🚀
   const handleTextPaste = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value
     setPasteText(text)
 
     if (!text.trim()) return
 
-    // Split for normal NTDs vs Lead NTDs to prevent confusion
-    const parts = text.split(/NTD used for lead/i)
-    const mainText = parts[0] || text
-    const leadText = parts[1] || ''
+    // Lead NTD aur Normal NTD ko alag karne ka Sahi Tareeqa (Bina neeche ka text udaye)
+    const splitIndex = text.toLowerCase().indexOf('ntd used for lead');
+    const firstHalf = splitIndex !== -1 ? text.substring(0, splitIndex) : text;
+    const secondHalf = splitIndex !== -1 ? text.substring(splitIndex) : '';
 
     const extractNum = (source: string, regex: RegExp, defaultVal = 0) => {
       const match = source.match(regex)
@@ -104,7 +104,7 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
       return match && match[1] ? match[1].trim() : defaultVal
     }
 
-    // Date Format Correction
+    // Date Parse
     let parsedDate = formData.date
     const dateMatch = text.match(/Date\s*-\s*([0-9/]+)/i)
     if (dateMatch && dateMatch[1]) {
@@ -115,44 +115,47 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
     setFormData(prev => ({
       ...prev,
       date: parsedDate,
-      face: extractStr(mainText, /Face\s*-\s*(.+)/i, prev.face),
-      location: extractStr(mainText, /Location\s*-\s*(.+)/i, prev.location),
-      blastingTime: extractStr(mainText, /Blasting Time\s*:\s*-\s*(.+)/i, prev.blastingTime),
+      face: extractStr(text, /Face\s*-\s*([^\n]+)/i, prev.face),
+      location: extractStr(text, /Location\s*-\s*([^\n]+)/i, prev.location),
+      blastingTime: extractStr(text, /Blasting Time\s*[:\-]*\s*([^\n]+)/i, prev.blastingTime),
       
-      holesMain: extractNum(mainText, /Main\s*-\s*([\d.]+)/i, prev.holesMain),
-      holesPilot: extractNum(mainText, /pilot\s*-\s*([\d.]+)/i, prev.holesPilot),
-      benchHeight: extractNum(mainText, /Bench height\s*-\s*([\d.]+)/i, prev.benchHeight),
-      depthMain: extractNum(mainText, /Avg\.Depth\s*-\s*([\d.]+)/i, prev.depthMain),
-      burden: extractNum(mainText, /Burden\s*-\s*([\d.]+)/i, prev.burden),
-      spacing: extractNum(mainText, /Spacing\s*-\s*([\d.]+)/i, prev.spacing),
-      stemmingMain: extractNum(mainText, /Stemming\s*-\s*([\d.]+)/i, prev.stemmingMain),
+      holesMain: extractNum(text, /Main\s*-\s*([\d.]+)/i, prev.holesMain),
+      holesPilot: extractNum(text, /pilot\s*-\s*([\d.]+)/i, prev.holesPilot),
+      benchHeight: extractNum(text, /Bench height\s*-\s*([\d.]+)/i, prev.benchHeight),
+      depthMain: extractNum(text, /Avg\.Depth\s*-\s*([\d.]+)/i, prev.depthMain),
+      burden: extractNum(text, /Burden\s*-\s*([\d.]+)/i, prev.burden),
+      spacing: extractNum(text, /Spacing\s*-\s*([\d.]+)/i, prev.spacing),
+      stemmingMain: extractNum(text, /Stemming\s*-\s*([\d.]+)/i, prev.stemmingMain),
       
-      cphMain: extractNum(mainText, /CPH\s*-\s*([\d.]+)/i, prev.cphMain),
-      mcdMain: extractNum(mainText, /MCD\s*-\s*([\d.]+)/i, prev.mcdMain),
-      explosiveQty: extractNum(mainText, /Explosive\s*-\s*([\d.]+)/i, prev.explosiveQty),
-      volume: extractNum(mainText, /Volume\s*-\s*([\d.]+)/i, prev.volume),
-      pf: extractNum(mainText, /Pf-\s*([\d.]+)/i, prev.pf),
-      cf: extractNum(mainText, /Cf-\s*([\d.]+)/i, prev.cf),
+      cphMain: extractNum(text, /CPH\s*-\s*([\d.]+)/i, prev.cphMain),
+      mcdMain: extractNum(text, /MCD\s*-\s*([\d.]+)/i, prev.mcdMain),
+      explosiveQty: extractNum(text, /Explosive\s*-\s*([\d.]+)/i, prev.explosiveQty),
+      volume: extractNum(text, /Volume\s*-\s*([\d.]+)/i, prev.volume),
+      pf: extractNum(text, /Pf\s*-\s*([\d.]+)/i, prev.pf),
+      cf: extractNum(text, /Cf\s*-\s*([\d.]+)/i, prev.cf),
 
-      ntd17: extractNum(mainText, /17\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd17),
-      ntd25: extractNum(mainText, /25\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd25),
-      ntd42: extractNum(mainText, /42\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd42),
+      // NTD sirf upar wale half se uthayega
+      ntd17: extractNum(firstHalf, /17\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd17),
+      ntd25: extractNum(firstHalf, /25\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd25),
+      ntd42: extractNum(firstHalf, /42\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd42),
 
-      ntdLead17: extractNum(leadText, /17\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead17),
-      ntdLead25: extractNum(leadText, /25\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead25),
-      ntdLead42: extractNum(leadText, /42\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead42),
+      // Lead NTD sirf neeche wale half se uthayega
+      ntdLead17: extractNum(secondHalf, /17\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead17),
+      ntdLead25: extractNum(secondHalf, /25\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead25),
+      ntdLead42: extractNum(secondHalf, /42\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead42),
 
-      sureBlast: extractNum(mainText, /Sure blast-\s*([\d.]+)/i, prev.sureBlast),
-      ikon: extractNum(mainText, /Ikon\s*-\s*([\d.]+)/i, prev.ikon),
-      initialDensity: extractNum(mainText, /Initial density\s*-\s*([\d.]+)/i, prev.initialDensity),
-      finalDensity: extractNum(mainText, /Final density\s*-\s*([\d.]+)/i, prev.finalDensity),
-      booster: extractNum(mainText, /Booster-\s*([\d.]+)/i, prev.booster),
-      dth10m: extractNum(mainText, /DTH\s*\(10m\)\s*-\s*([\d.]+)/i, prev.dth10m),
-      dth6m: extractNum(mainText, /DTH\s*\(6m\)\s*-\s*([\d.]+)/i, prev.dth6m),
-      vibration: extractNum(mainText, /Vibration\s*-\s*([\d.]+)/i, prev.vibration),
-      db: extractNum(mainText, /Peak Overpressure\s*-\s*([\d.]+)/i, prev.db),
-      distance: extractNum(mainText, /Distance\s*-\s*([\d.]+)/i, prev.distance),
-      manPower: extractNum(mainText, /Man power\s*-\s*([\d.]+)/i, prev.manPower),
+      // Baaki sab wapas poore text se padhega
+      sureBlast: extractNum(text, /Sure\s*blast\s*-\s*([\d.]+)/i, prev.sureBlast),
+      ikon: extractNum(text, /Ikon\s*-\s*([\d.]+)/i, prev.ikon),
+      initialDensity: extractNum(text, /Initial density\s*-\s*([\d.]+)/i, prev.initialDensity),
+      finalDensity: extractNum(text, /Final density\s*-\s*([\d.]+)/i, prev.finalDensity),
+      booster: extractNum(text, /Booster\s*-\s*([\d.]+)/i, prev.booster),
+      dth10m: extractNum(text, /DTH\s*\(10m\)\s*-\s*([\d.]+)/i, prev.dth10m),
+      dth6m: extractNum(text, /DTH\s*\(6m\)\s*-\s*([\d.]+)/i, prev.dth6m),
+      vibration: extractNum(text, /Vibration\s*-\s*([\d.]+)/i, prev.vibration),
+      db: extractNum(text, /Peak Overpressure\s*-\s*([\d.]+)/i, prev.db),
+      distance: extractNum(text, /Distance\s*-\s*([\d.]+)/i, prev.distance),
+      manPower: extractNum(text, /Man power\s*-\s*([\d.]+)/i, prev.manPower),
     }))
   }
 
@@ -192,10 +195,10 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
           <textarea
             value={pasteText}
             onChange={handleTextPaste}
-            placeholder={`Date - 01/07/2026\nFace - XOB-1\nNo of Holes - 54\nMain - 46\n...`}
+            placeholder={`Date - 01/07/2026\nFace - XOB-1\nNo of Holes - 54...`}
             className="w-full h-28 px-4 py-3 bg-white border border-emerald-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-emerald-600 outline-none"
           ></textarea>
-          <p className="text-xs text-emerald-600 font-semibold mt-2">Format paste karte hi neechay ka form khud bhar jayega.</p>
+          <p className="text-xs text-emerald-600 font-semibold mt-2">DTH, Booster, DB, Density sab auto-fill hoga ab.</p>
         </div>
 
         <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
@@ -461,7 +464,7 @@ export default function BlastPage() {
             </div>
             
             <Button onClick={() => setIsExcelModalOpen(true)} variant="outline" className="border-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-bold px-4 py-6 rounded-xl">
-              <FileSpreadsheet className="w-5 h-5 mr-2" /> Upload Excel File
+              <FileSpreadsheet className="w-5 h-5 mr-2" /> Upload Excel
             </Button>
             
             <Button onClick={() => setIsFormModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-6 rounded-xl">
