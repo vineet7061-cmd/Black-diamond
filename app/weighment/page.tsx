@@ -44,6 +44,7 @@ function WeighmentForm({ onSubmit, onCancel, isSubmitting }: { onSubmit: (data: 
   return (
     <div className="p-2">
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Strictly 2-Column Form Layout */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-semibold text-gray-900 mb-1.5">Date</label>
@@ -133,7 +134,6 @@ function WeighmentForm({ onSubmit, onCancel, isSubmitting }: { onSubmit: (data: 
             />
           </div>
 
-          {/* New Cloudinary Upload Input */}
           <div className="col-span-1 md:col-span-2 mt-2">
             <label className="block text-sm font-semibold text-gray-900 mb-1.5">Upload Weighment Slip (Photo)</label>
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50 hover:bg-gray-100 transition-colors">
@@ -186,9 +186,9 @@ export default function WeighmentPage() {
   const [isFormModalOpen, setIsFormModalOpen] = useState(false)
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isUpdatingImage, setIsUpdatingImage] = useState(false) // New state for in-modal upload
   const [isLoading, setIsLoading] = useState(true)
 
-  // Fetch data from Supabase
   const fetchRecords = async () => {
     setIsLoading(true)
     const { data, error } = await supabase
@@ -221,7 +221,6 @@ export default function WeighmentPage() {
     fetchRecords()
   }, [])
 
-  // Cloudinary Upload Function
   const uploadToCloudinary = async (file: File | null) => {
     if (!file) return null;
   
@@ -233,10 +232,7 @@ export default function WeighmentPage() {
     try {
       const response = await fetch(
         `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
-        {
-          method: "POST",
-          body: formData,
-        }
+        { method: "POST", body: formData }
       );
       const data = await response.json();
       return data.secure_url; 
@@ -246,19 +242,14 @@ export default function WeighmentPage() {
     }
   };
 
-  // Save new entry to Supabase
   const handleNewEntry = async (data: any, file: File | null) => {
     setIsSubmitting(true)
-    
-    // Upload slip to Cloudinary first
     const photoUrl = await uploadToCloudinary(file)
-    
     const netWeight = parseFloat(data.grossWeight) - parseFloat(data.tareWeight)
 
     const { error } = await supabase
       .from('weighment_slips')
-      .insert([
-        {
+      .insert([{
           date: data.date,
           challan_no: data.challanNo,
           truck_no: data.truckNo,
@@ -267,31 +258,44 @@ export default function WeighmentPage() {
           gross_weight: parseFloat(data.grossWeight),
           tare_weight: parseFloat(data.tareWeight),
           net_weight: netWeight,
-          photo_url: photoUrl // Now saving the Cloudinary URL
-        }
-      ])
+          photo_url: photoUrl
+      }])
 
     if (error) {
-      console.error("Insert error:", error)
       alert("Error saving record: " + error.message)
-      setIsSubmitting(false)
-      return
+    } else {
+      await fetchRecords() 
+      setIsFormModalOpen(false)
     }
-
-    await fetchRecords() // Refresh the list from DB
     setIsSubmitting(false)
-    setIsFormModalOpen(false)
   }
 
-  // Delete entry from Supabase
+  // Handle Image Upload inside the Modal
+  const handleUpdateImage = async (id: string, file: File) => {
+    setIsUpdatingImage(true)
+    const photoUrl = await uploadToCloudinary(file)
+    
+    if (photoUrl) {
+      const { error } = await supabase
+        .from('weighment_slips')
+        .update({ photo_url: photoUrl })
+        .eq('id', id)
+
+      if (!error) {
+        setRecords(prev => prev.map(r => r.id === id ? { ...r, photoUrl } : r))
+      } else {
+        alert("Failed to update database with new image.")
+      }
+    } else {
+      alert("Failed to upload image.")
+    }
+    setIsUpdatingImage(false)
+  }
+
   const handleDeleteRecord = async (id: string, e?: React.MouseEvent) => {
     if(e) e.stopPropagation()
     if(confirm("Are you sure you want to delete this weighment entry permanently?")) {
-      const { error } = await supabase
-        .from('weighment_slips')
-        .delete()
-        .eq('id', id)
-
+      const { error } = await supabase.from('weighment_slips').delete().eq('id', id)
       if (error) {
         alert("Error deleting record: " + error.message)
       } else {
@@ -330,10 +334,11 @@ export default function WeighmentPage() {
 
         {isLoading ? (
           <div className="flex justify-center items-center py-20 text-gray-500">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
             Loading database records...
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="flex flex-col gap-8">
             {Object.entries(recordsByDate).length > 0 ? (
               Object.entries(recordsByDate).map(([date, dateRecords]) => (
                 <div key={date} className="bg-white border-2 border-gray-200 rounded-xl p-5 shadow-sm">
@@ -349,14 +354,15 @@ export default function WeighmentPage() {
                     </span>
                   </div>
 
-                  <div className="space-y-4">
+                  {/* Strictly 2-Column Grid for List Items */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {dateRecords.map((record) => (
                       <div 
                         key={record.id} 
                         onClick={() => setSelectedRecordId(record.id)}
-                        className="p-4 bg-gray-50 border border-gray-200 rounded-xl relative group hover:border-blue-400 hover:shadow-md transition-all cursor-pointer"
+                        className="p-4 bg-gray-50 border border-gray-200 rounded-xl relative group hover:border-blue-400 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
                       >
-                        <div className="pr-8">
+                        <div className="pr-8 mb-4">
                           <div className="flex justify-between items-start mb-2">
                             <div>
                               <p className="text-xs font-bold text-gray-500 uppercase">Challan No</p>
@@ -367,18 +373,17 @@ export default function WeighmentPage() {
                               <p className="text-sm font-bold text-gray-900">{record.truckNo}</p>
                             </div>
                           </div>
-
-                          <p className="text-xs text-gray-600 mb-3">{record.customer} • {record.material}</p>
-                          
-                          <div className="flex items-center justify-between mt-2 pt-3 border-t border-gray-200">
-                            <span className="text-sm font-bold text-gray-700 flex items-center gap-1">
-                              {record.photoUrl ? <FileText className="w-4 h-4 text-emerald-600" /> : <FileText className="w-4 h-4 text-gray-400" />}
-                              Final Qty
-                            </span>
-                            <span className="text-lg font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg">
-                              {record.netWeight.toLocaleString('en-IN')} Kgs
-                            </span>
-                          </div>
+                          <p className="text-xs text-gray-600">{record.customer} • {record.material}</p>
+                        </div>
+                        
+                        <div className="flex items-center justify-between pt-3 border-t border-gray-200">
+                          <span className="text-sm font-bold text-gray-700 flex items-center gap-1">
+                            {record.photoUrl ? <FileText className="w-4 h-4 text-emerald-600" /> : <FileText className="w-4 h-4 text-gray-400" />}
+                            Final Qty
+                          </span>
+                          <span className="text-lg font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg">
+                            {record.netWeight.toLocaleString('en-IN')} Kgs
+                          </span>
                         </div>
                         
                         <button 
@@ -404,6 +409,7 @@ export default function WeighmentPage() {
         )}
       </main>
 
+      {/* Add New Entry Modal */}
       {isFormModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative">
@@ -429,6 +435,7 @@ export default function WeighmentPage() {
         </div>
       )}
 
+      {/* Record Details Modal with Upload Functionality */}
       {selectedRecord && (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col md:flex-row relative">
@@ -447,9 +454,39 @@ export default function WeighmentPage() {
                   className="max-w-full max-h-[400px] md:max-h-[80vh] object-contain rounded-lg shadow-sm"
                 />
               ) : (
-                <div className="text-center">
-                  <FileText className="w-16 h-16 text-gray-300 mx-auto mb-2" />
-                  <p className="text-gray-500 font-medium">No slip uploaded for this entry</p>
+                <div className="text-center w-full max-w-xs">
+                  <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-700 font-bold mb-1">No slip found</p>
+                  <p className="text-gray-500 text-sm mb-6">You can upload a document for this existing entry now.</p>
+                  
+                  <input
+                    type="file"
+                    id="update-slip"
+                    accept="image/*,.pdf"
+                    className="hidden"
+                    disabled={isUpdatingImage}
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        handleUpdateImage(selectedRecord.id, e.target.files[0])
+                      }
+                    }}
+                  />
+                  <label 
+                    htmlFor="update-slip" 
+                    className={`cursor-pointer inline-flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl transition-colors w-full ${isUpdatingImage ? 'opacity-50 pointer-events-none' : ''}`}
+                  >
+                    {isUpdatingImage ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                        Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-5 h-5" />
+                        Upload Slip Now
+                      </>
+                    )}
+                  </label>
                 </div>
               )}
             </div>
