@@ -82,14 +82,12 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
     vibration: 0, db: 0, distance: 0, manPower: 0
   })
 
-  // 🚀 FIXED: SMART TEXT EXTRACTOR (100% Accurate Parser) 🚀
   const handleTextPaste = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value
     setPasteText(text)
 
     if (!text.trim()) return
 
-    // Lead NTD aur Normal NTD ko alag karne ka Sahi Tareeqa (Bina neeche ka text udaye)
     const splitIndex = text.toLowerCase().indexOf('ntd used for lead');
     const firstHalf = splitIndex !== -1 ? text.substring(0, splitIndex) : text;
     const secondHalf = splitIndex !== -1 ? text.substring(splitIndex) : '';
@@ -104,7 +102,6 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
       return match && match[1] ? match[1].trim() : defaultVal
     }
 
-    // Date Parse
     let parsedDate = formData.date
     const dateMatch = text.match(/Date\s*-\s*([0-9/]+)/i)
     if (dateMatch && dateMatch[1]) {
@@ -120,7 +117,7 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
       blastingTime: extractStr(text, /Blasting Time\s*[:\-]*\s*([^\n]+)/i, prev.blastingTime),
       
       holesMain: extractNum(text, /Main\s*-\s*([\d.]+)/i, prev.holesMain),
-      holesPilot: extractNum(text, /pilot\s*-\s*([\d.]+)/i, prev.holesPilot),
+      holesPilot: extractNum(text, /pilot\s*-\s*([\d.]+)/i, 0), // Agar nahi mila toh 0 lega
       benchHeight: extractNum(text, /Bench height\s*-\s*([\d.]+)/i, prev.benchHeight),
       depthMain: extractNum(text, /Avg\.Depth\s*-\s*([\d.]+)/i, prev.depthMain),
       burden: extractNum(text, /Burden\s*-\s*([\d.]+)/i, prev.burden),
@@ -134,17 +131,14 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
       pf: extractNum(text, /Pf\s*-\s*([\d.]+)/i, prev.pf),
       cf: extractNum(text, /Cf\s*-\s*([\d.]+)/i, prev.cf),
 
-      // NTD sirf upar wale half se uthayega
       ntd17: extractNum(firstHalf, /17\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd17),
       ntd25: extractNum(firstHalf, /25\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd25),
       ntd42: extractNum(firstHalf, /42\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntd42),
 
-      // Lead NTD sirf neeche wale half se uthayega
       ntdLead17: extractNum(secondHalf, /17\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead17),
       ntdLead25: extractNum(secondHalf, /25\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead25),
       ntdLead42: extractNum(secondHalf, /42\s*ms\s*NTD\s*-\s*([\d.]+)/i, prev.ntdLead42),
 
-      // Baaki sab wapas poore text se padhega
       sureBlast: extractNum(text, /Sure\s*blast\s*-\s*([\d.]+)/i, prev.sureBlast),
       ikon: extractNum(text, /Ikon\s*-\s*([\d.]+)/i, prev.ikon),
       initialDensity: extractNum(text, /Initial density\s*-\s*([\d.]+)/i, prev.initialDensity),
@@ -168,17 +162,18 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
     onSubmit(formData)
   }
 
-  const InputField = ({ label, field, type = "number", step = "any", placeholder = "0" }: any) => (
+  // REQUIRED PROP ADD KIYA HAI, DEFAULT FALSE HAI
+  const InputField = ({ label, field, type = "number", step = "any", placeholder = "0", isRequired = false }: any) => (
     <div>
       <label className="block text-[11px] font-bold text-gray-600 mb-1 uppercase tracking-wider">{label}</label>
       <input
         type={type}
         step={step}
         placeholder={placeholder}
-        value={formData[field as keyof BlastRecord] || ''}
+        value={formData[field as keyof BlastRecord] ?? ''} // 0 ko empty nahi karega, proper 0 dikhayega
         onChange={(e) => handleInput(field, type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value)}
         className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:ring-2 focus:ring-blue-600"
-        required
+        required={isRequired}
       />
     </div>
   )
@@ -187,7 +182,6 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
     <div className="p-4">
       <form onSubmit={handleSubmit} className="space-y-6">
         
-        {/* TEXT PASTE AREA FOR AUTO-FILL */}
         <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-4">
           <label className="block text-sm font-bold text-emerald-800 mb-2 flex items-center gap-2">
             <Copy className="w-4 h-4" /> Paste Message Details (Auto-Fill)
@@ -198,15 +192,15 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
             placeholder={`Date - 01/07/2026\nFace - XOB-1\nNo of Holes - 54...`}
             className="w-full h-28 px-4 py-3 bg-white border border-emerald-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-emerald-600 outline-none"
           ></textarea>
-          <p className="text-xs text-emerald-600 font-semibold mt-2">DTH, Booster, DB, Density sab auto-fill hoga ab.</p>
+          <p className="text-xs text-emerald-600 font-semibold mt-2">Agar Pilot data text mein nahi hai, toh automatic 0 le lega aur error nahi dega.</p>
         </div>
 
         <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
           <h3 className="font-bold text-blue-800 mb-3 text-sm flex items-center gap-1"><MapPin className="w-4 h-4"/> Basic Info</h3>
           <div className="grid grid-cols-2 gap-4">
-            <InputField label="Date" field="date" type="date" />
+            <InputField label="Date" field="date" type="date" isRequired={true} />
             <InputField label="Blasting Time" field="blastingTime" type="text" placeholder="e.g. 2:30 PM" />
-            <InputField label="Face" field="face" type="text" placeholder="e.g. XOB-1" />
+            <InputField label="Face" field="face" type="text" placeholder="e.g. XOB-1" isRequired={true} />
             <InputField label="Exact Location" field="location" type="text" placeholder="e.g. Near X OB 1 area" />
           </div>
         </div>
@@ -237,7 +231,7 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
             <InputField label="MCD (Pilot) Kg" field="mcdPilot" />
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <InputField label="Total Explosive (Kg)" field="explosiveQty" />
+            <InputField label="Total Explosive (Kg)" field="explosiveQty" isRequired={true} />
             <InputField label="Volume (Cum)" field="volume" />
             <InputField label="Pf (kg/cum)" field="pf" />
             <InputField label="Cf (cum/kg)" field="cf" />
@@ -523,7 +517,6 @@ export default function BlastPage() {
         )}
       </main>
 
-      {/* FORM MODAL WITH AUTO FILL BOX */}
       {isFormModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -536,7 +529,6 @@ export default function BlastPage() {
         </div>
       )}
 
-      {/* EXCEL UPLOAD MODAL */}
       {isExcelModalOpen && (
         <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl relative">
@@ -568,7 +560,6 @@ export default function BlastPage() {
         </div>
       )}
 
-      {/* FULL REPORT DETAIL MODAL */}
       {selectedRecord && (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col relative">
