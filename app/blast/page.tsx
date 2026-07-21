@@ -6,7 +6,6 @@ import { Plus, Trash2, Zap, MapPin, Calendar, Clock, X, MessageCircle, Upload, F
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
-import { GoogleGenerativeAI } from "@google/generative-ai"
 
 interface BlastRecord {
   id: string
@@ -84,83 +83,32 @@ function BlastForm({ onSubmit, onCancel, isSaving }: { onSubmit: (data: any) => 
     vibration: 0, db: 0, distance: 0, manPower: 0
   })
 
-  // 🚀 AI SMART PARSER (Gemini AI Powered) 🚀
   const handleAIScan = async () => {
     if (!pasteText.trim()) {
       alert("Pehle text box mein report paste kar!")
       return
     }
 
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
-    if (!apiKey || !apiKey.startsWith('AIza')) {
-      alert("Google Gemini API Key missing or invalid in Vercel settings!")
-      return
-    }
-
     setIsScanning(true)
     try {
-      const genAI = new GoogleGenerativeAI(apiKey)
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
+      const res = await fetch('/api/parse-blast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: pasteText })
+      })
 
-      const prompt = `Analyze this unformatted blast report text carefully. It may have varying formats, spellings, or missing optional fields (like pilot holes or lead NTDs which should default to 0).
-      Extract the details and return ONLY a valid JSON object without any markdown tags or backticks.
-
-      Keys required in JSON:
-      - "date": string in YYYY-MM-DD format (convert DD/MM/YYYY if found)
-      - "face": string
-      - "location": string
-      - "blastingTime": string (e.g. "2:30 PM")
-      - "holesMain": number
-      - "holesPilot": number (default 0 if missing)
-      - "benchHeight": number
-      - "depthMain": number
-      - "depthPilot": number (default 0)
-      - "burden": number
-      - "spacing": number
-      - "stemmingMain": number
-      - "stemmingPilot": number (default 0)
-      - "cphMain": number
-      - "cphPilot": number (default 0)
-      - "mcdMain": number
-      - "mcdPilot": number (default 0)
-      - "explosiveQty": number
-      - "volume": number
-      - "pf": number
-      - "cf": number
-      - "ntd17": number
-      - "ntd25": number
-      - "ntd42": number
-      - "ntdLead17": number (default 0)
-      - "ntdLead25": number (default 0)
-      - "ntdLead42": number (default 0)
-      - "sureBlast": number (default 0)
-      - "ikon": number (default 0)
-      - "initialDensity": number
-      - "finalDensity": number
-      - "booster": number
-      - "dth10m": number
-      - "dth6m": number
-      - "vibration": number
-      - "db": number (Peak Overpressure)
-      - "distance": number
-      - "manPower": number
-
-      Here is the text to analyze:
-      ${pasteText}`
-
-      const result = await model.generateContent(prompt)
-      const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim()
-      const parsed = JSON.parse(text)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || "Failed to parse with AI")
 
       setFormData(prev => ({
         ...prev,
-        ...parsed,
-        date: parseDateString(parsed.date || prev.date)
+        ...json.data,
+        date: parseDateString(json.data.date || prev.date)
       }))
-      alert("✨ AI ne saara data smartly extract kar liya hai!")
+      alert("✨ AI ne saara data successfully extract kar liya hai!")
     } catch (err: any) {
       console.error(err)
-      alert("AI Parsing Error: " + err.message + "\nText format check kar le.")
+      alert("AI Parsing Error: " + err.message)
     } finally {
       setIsScanning(false)
     }
@@ -195,7 +143,6 @@ function BlastForm({ onSubmit, onCancel, isSaving }: { onSubmit: (data: any) => 
     <div className="p-4">
       <form onSubmit={handleSubmit} className="space-y-6">
         
-        {/* AI SMART SCAN BOX */}
         <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border-2 border-indigo-200 rounded-xl p-4 shadow-sm">
           <label className="block text-sm font-bold text-indigo-900 mb-2 flex items-center justify-between">
             <span className="flex items-center gap-2"><Sparkles className="w-5 h-5 text-indigo-600" /> AI Smart Report Reader</span>
@@ -654,7 +601,7 @@ export default function BlastPage() {
                   <div><p className="text-xs text-gray-500">Booster</p><p className="font-bold text-gray-900">{selectedRecord.booster} Kg</p></div>
                   <div><p className="text-xs text-gray-500">Density (Init / Final)</p><p className="font-bold text-gray-900">{selectedRecord.initialDensity} / {selectedRecord.finalDensity} g/cc</p></div>
                   <div><p className="text-xs text-gray-500">DTH (10m / 6m)</p><p className="font-bold text-gray-900">{selectedRecord.dth10m} / {selectedRecord.dth6m}</p></div>
-                  <div><p className="text-xs text-gray-500">Vibration</p><p className="font-bold text-red-600">{selectedRecord.vibration} mm/sec</p></div>
+                  <div><p className="text-xs text-gray-500">Vibration</p><p className="font-bold text-red-600">{selectedRecord.vilation || selectedRecord.vibration} mm/sec</p></div>
                   <div><p className="text-xs text-gray-500">Peak Overpressure</p><p className="font-bold text-gray-900">{selectedRecord.db} dB</p></div>
                   <div><p className="text-xs text-gray-500">Location</p><p className="font-bold text-gray-900">{selectedRecord.location}</p></div>
                   <div><p className="text-xs text-gray-500">Man Power</p><p className="font-bold text-gray-900">{selectedRecord.manPower}</p></div>
