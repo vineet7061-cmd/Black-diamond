@@ -5,6 +5,7 @@ import Navigation from '@/components/Navigation'
 import { Plus, Trash2, Zap, MapPin, Calendar, Clock, X, MessageCircle, Upload, Filter, FileSpreadsheet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
+import * as XLSX from 'xlsx'
 
 interface BlastRecord {
   id: string
@@ -48,9 +49,17 @@ interface BlastRecord {
   blastingTime: string
 }
 
-const parseExcelDate = (rawDate: string) => {
+// Smart function to handle DD/MM/YYYY or YYYY-MM-DD dates
+const parseDateString = (rawDate: any) => {
   if (!rawDate) return new Date().toISOString().split('T')[0]
-  const clean = rawDate.trim()
+  
+  // Handles Excel serial date numbers
+  if (typeof rawDate === 'number') {
+    const jsDate = new Date((rawDate - (25567 + 2)) * 86400 * 1000)
+    return jsDate.toISOString().split('T')[0]
+  }
+
+  const clean = String(rawDate).trim()
   const parts = clean.includes('/') ? clean.split('/') : clean.split('-')
   
   if (parts.length === 3) {
@@ -63,7 +72,7 @@ const parseExcelDate = (rawDate: string) => {
 function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCancel: () => void }) {
   const [formData, setFormData] = useState<Partial<BlastRecord>>({
     date: new Date().toISOString().split('T')[0],
-    blastingTime: '', face: '', location: '',
+    blastingTime: '14:30', face: '', location: '',
     holesMain: 0, holesPilot: 0, benchHeight: 0,
     depthMain: 0, depthPilot: 0, burden: 0, spacing: 0,
     stemmingMain: 0, stemmingPilot: 0,
@@ -108,9 +117,9 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
           <h3 className="font-bold text-blue-800 mb-3 text-sm flex items-center gap-1"><MapPin className="w-4 h-4"/> Basic Info</h3>
           <div className="grid grid-cols-2 gap-4">
             <InputField label="Date" field="date" type="date" />
-            <InputField label="Blasting Time" field="blastingTime" type="time" />
-            <InputField label="Face" field="face" type="text" placeholder="e.g. VII OB 2" />
-            <InputField label="Exact Location" field="location" type="text" placeholder="e.g. Near Haul Road" />
+            <InputField label="Blasting Time" field="blastingTime" type="text" placeholder="e.g. 2:30 PM" />
+            <InputField label="Face" field="face" type="text" placeholder="e.g. XOB-1" />
+            <InputField label="Exact Location" field="location" type="text" placeholder="e.g. Near X OB 1 area" />
           </div>
         </div>
 
@@ -174,7 +183,7 @@ function BlastForm({ onSubmit, onCancel }: { onSubmit: (data: any) => void, onCa
             <InputField label="Init Density (g/cc)" field="initialDensity" />
             <InputField label="Final Density (g/cc)" field="finalDensity" />
             <InputField label="Vibration (mm/s)" field="vibration" />
-            <InputField label="DB Level" field="db" />
+            <InputField label="Peak Overpressure (dB)" field="db" />
             <InputField label="Distance (m)" field="distance" />
           </div>
           <div className="grid grid-cols-2 gap-4 mt-4">
@@ -195,10 +204,10 @@ export default function BlastPage() {
   const [records, setRecords] = useState<BlastRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isFormModalOpen, setIsFormModalOpen] = useState(false)
-  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false)
+  const [isExcelModalOpen, setIsExcelModalOpen] = useState(false)
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
-  const [bulkText, setBulkText] = useState('')
   const [selectedMonth, setSelectedMonth] = useState<string>('')
+  const [uploading, setUploading] = useState(false)
 
   const fetchRecords = async () => {
     setIsLoading(true)
@@ -229,70 +238,102 @@ export default function BlastPage() {
   }
 
   const handleNewEntry = async (data: any) => {
-    const newEntry = { ...data, date: parseExcelDate(data.date), id: Math.random().toString(36).substr(2, 9) }
+    const newEntry = { ...data, date: parseDateString(data.date), id: Math.random().toString(36).substr(2, 9) }
     setRecords([newEntry, ...records])
     setIsFormModalOpen(false)
     await supabase.from('blast_reports').insert([newEntry])
   }
 
-  const handleBulkImport = async () => {
-    if (!bulkText.trim()) return
-    const rows = bulkText.trim().split('\n')
-    const newEntries: BlastRecord[] = []
+  // 🚀 EXCEL FILE UPLOAD LOGIC 🚀
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
 
-    rows.forEach(row => {
-      const cols = row.split('\t')
-      if (cols.length < 5) return
-      newEntries.push({
-        id: Math.random().toString(36).substr(2, 9),
-        date: parseExcelDate(cols[0]),
-        blastingTime: cols[1] || '00:00',
-        face: cols[2] || '',
-        location: cols[3] || '',
-        holesMain: parseFloat(cols[4]) || 0,
-        holesPilot: parseFloat(cols[5]) || 0,
-        benchHeight: parseFloat(cols[6]) || 0,
-        depthMain: parseFloat(cols[7]) || 0,
-        depthPilot: parseFloat(cols[8]) || 0,
-        burden: parseFloat(cols[9]) || 0,
-        spacing: parseFloat(cols[10]) || 0,
-        stemmingMain: parseFloat(cols[11]) || 0,
-        stemmingPilot: parseFloat(cols[12]) || 0,
-        cphMain: parseFloat(cols[13]) || 0,
-        cphPilot: parseFloat(cols[14]) || 0,
-        mcdMain: parseFloat(cols[15]) || 0,
-        mcdPilot: parseFloat(cols[16]) || 0,
-        explosiveQty: parseFloat(cols[17]) || 0,
-        volume: parseFloat(cols[18]) || 0,
-        pf: parseFloat(cols[19]) || 0,
-        cf: parseFloat(cols[20]) || 0,
-        ntd17: parseFloat(cols[21]) || 0,
-        ntd25: parseFloat(cols[22]) || 0,
-        ntd42: parseFloat(cols[23]) || 0,
-        ntdLead17: parseFloat(cols[24]) || 0,
-        ntdLead25: parseFloat(cols[25]) || 0,
-        ntdLead42: parseFloat(cols[26]) || 0,
-        sureBlast: parseFloat(cols[27]) || 0,
-        ikon: parseFloat(cols[28]) || 0,
-        booster: parseFloat(cols[29]) || 0,
-        initialDensity: parseFloat(cols[30]) || 0,
-        finalDensity: parseFloat(cols[31]) || 0,
-        dth10m: parseFloat(cols[32]) || 0,
-        dth6m: parseFloat(cols[33]) || 0,
-        vibration: parseFloat(cols[34]) || 0,
-        db: parseFloat(cols[35]) || 0,
-        distance: parseFloat(cols[36]) || 0,
-        manPower: parseFloat(cols[37]) || 0,
-      })
-    })
+    setUploading(true)
+    const reader = new FileReader()
 
-    if (newEntries.length > 0) {
-      setRecords([...newEntries, ...records])
-      setBulkText('')
-      setIsBulkModalOpen(false)
-      alert(`${newEntries.length} records imported!`)
-      await supabase.from('blast_reports').insert(newEntries)
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result
+        const wb = XLSX.read(bstr, { type: 'binary' })
+        const wsname = wb.SheetNames[0]
+        const ws = wb.Sheets[wsname]
+        const jsonData: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' })
+
+        if (jsonData.length === 0) {
+          alert("Excel file empty hai!")
+          setUploading(false)
+          return
+        }
+
+        const formattedEntries: BlastRecord[] = jsonData.map((row) => {
+          // Helper to get case-insensitive column values
+          const getCol = (keyNames: string[]) => {
+            const foundKey = Object.keys(row).find(k => 
+              keyNames.some(kn => k.toLowerCase().replace(/[^a-z0-9]/g, '') === kn.toLowerCase().replace(/[^a-z0-9]/g, ''))
+            )
+            return foundKey ? row[foundKey] : ''
+          }
+
+          return {
+            id: Math.random().toString(36).substr(2, 9),
+            date: parseDateString(getCol(['date'])),
+            blastingTime: String(getCol(['blasting time', 'time']) || '14:30'),
+            face: String(getCol(['face'])),
+            location: String(getCol(['location'])),
+            holesMain: parseFloat(getCol(['holes main', 'main holes', 'main'])) || 0,
+            holesPilot: parseFloat(getCol(['holes pilot', 'pilot holes', 'pilot'])) || 0,
+            benchHeight: parseFloat(getCol(['bench height'])) || 0,
+            depthMain: parseFloat(getCol(['depth main', 'avg depth main', 'avg depth'])) || 0,
+            depthPilot: parseFloat(getCol(['depth pilot', 'avg depth pilot'])) || 0,
+            burden: parseFloat(getCol(['burden'])) || 0,
+            spacing: parseFloat(getCol(['spacing'])) || 0,
+            stemmingMain: parseFloat(getCol(['stemming main', 'stemming'])) || 0,
+            stemmingPilot: parseFloat(getCol(['stemming pilot'])) || 0,
+            cphMain: parseFloat(getCol(['cph main', 'cph'])) || 0,
+            cphPilot: parseFloat(getCol(['cph pilot'])) || 0,
+            mcdMain: parseFloat(getCol(['mcd main', 'mcd'])) || 0,
+            mcdPilot: parseFloat(getCol(['mcd pilot'])) || 0,
+            explosiveQty: parseFloat(getCol(['explosive', 'explosive qty'])) || 0,
+            volume: parseFloat(getCol(['volume'])) || 0,
+            pf: parseFloat(getCol(['pf', 'powder factor'])) || 0,
+            cf: parseFloat(getCol(['cf', 'charge factor'])) || 0,
+            ntd17: parseFloat(getCol(['17 ms ntd', '17ms ntd', '17ms'])) || 0,
+            ntd25: parseFloat(getCol(['25 ms ntd', '25ms ntd', '25ms'])) || 0,
+            ntd42: parseFloat(getCol(['42 ms ntd', '42ms ntd', '42ms'])) || 0,
+            ntdLead17: parseFloat(getCol(['lead 17ms', '17ms lead', 'lead 17 ms ntd'])) || 0,
+            ntdLead25: parseFloat(getCol(['lead 25ms', '25ms lead', 'lead 25 ms ntd'])) || 0,
+            ntdLead42: parseFloat(getCol(['lead 42ms', '42ms lead', 'lead 42 ms ntd'])) || 0,
+            sureBlast: parseFloat(getCol(['sure blast', 'sureblast'])) || 0,
+            ikon: parseFloat(getCol(['ikon'])) || 0,
+            booster: parseFloat(getCol(['booster'])) || 0,
+            initialDensity: parseFloat(getCol(['initial density'])) || 0,
+            finalDensity: parseFloat(getCol(['final density'])) || 0,
+            dth10m: parseFloat(getCol(['dth 10m', 'dth10m'])) || 0,
+            dth6m: parseFloat(getCol(['dth 6m', 'dth6m'])) || 0,
+            vibration: parseFloat(getCol(['vibration'])) || 0,
+            db: parseFloat(getCol(['peak overpressure', 'db', 'db level'])) || 0,
+            distance: parseFloat(getCol(['distance'])) || 0,
+            manPower: parseFloat(getCol(['man power', 'manpower'])) || 0,
+          }
+        })
+
+        // Save to Supabase
+        const { error } = await supabase.from('blast_reports').insert(formattedEntries)
+        if (error) {
+          alert("Database saving error: " + error.message)
+        } else {
+          setRecords([...formattedEntries, ...records])
+          alert(`Success! ${formattedEntries.length} entries Excel se import ho gayi hain.`)
+          setIsExcelModalOpen(false)
+        }
+      } catch (err: any) {
+        alert("Excel File parsing error: " + err.message)
+      } finally {
+        setUploading(false)
+      }
     }
+    reader.readAsBinaryString(file)
   }
 
   const handleDeleteRecord = async (id: string, e: React.MouseEvent) => {
@@ -306,7 +347,7 @@ export default function BlastPage() {
 
   const shareToWhatsApp = (record: BlastRecord) => {
     const formattedDate = new Date(record.date).toLocaleDateString('en-IN') 
-    const message = `BDEPL \nDate - ${formattedDate} \nFace -  ${record.face}\n\nNo of Holes\nMain - ${record.holesMain}\nPilot - ${record.holesPilot}\nBench height - ${record.benchHeight} m\n\nAvg.Depth\nMain - ${record.depthMain} m\nPilot - ${record.depthPilot} m\n\nBurden -   ${record.burden} m\nSpacing - ${record.spacing} m\n\nStemming\nMain - ${record.stemmingMain} m\nPilot - ${record.stemmingPilot} m\n\nCPH\nMain - ${record.cphMain} Kg \nPilot - ${record.cphPilot} Kg \n\nMCD\nMain - ${record.mcdMain} Kg \nPilot - ${record.mcdPilot} Kg \n\nExplosive - ${record.explosiveQty} Kg\nVolume -  ${record.volume} Cum\n\nPf- ${record.pf} kg/cum\nCf- ${record.cf} cum/kg\n\n17 ms NTD - ${record.ntd17}\n25 ms NTD-  ${record.ntd25}\n42 ms NTD-  ${record.ntd42}\nNTD used for lead\n17 ms NTD- ${record.ntdLead17}\n25 ms NTD-  ${record.ntdLead25}\n42 ms NTD-  ${record.ntdLead42}\n\nSURE BLAST  -  ${record.sureBlast}\nIkon - ${record.ikon}\n\nInitial density -${record.initialDensity} g/cc\nFinal density - ${record.finalDensity} g/cc\n\nBooster- ${record.booster} kg\n\nDTH \n10m - ${record.dth10m}\n6m - ${record.dth6m}\n\nVibration -  ${record.vibration} mm/s\nDB- ${record.db} \nLocation -  ${record.location}\nDistance - ${record.distance} m\nMan power - ${record.manPower}\nBlasting Time : ${record.blastingTime}`
+    const message = `BDEPL \nDate - ${formattedDate} \nFace -  ${record.face}\n\nNo of Holes\nMain - ${record.holesMain}\nPilot - ${record.holesPilot}\nBench height - ${record.benchHeight} m\n\nAvg.Depth\nMain - ${record.depthMain} m\nPilot - ${record.depthPilot} m\n\nBurden -   ${record.burden} m\nSpacing - ${record.spacing} m\n\nStemming\nMain - ${record.stemmingMain} m\nPilot - ${record.stemmingPilot} m\n\nCPH\nMain - ${record.cphMain} Kg \nPilot - ${record.cphPilot} Kg \n\nMCD\nMain - ${record.mcdMain} Kg \nPilot - ${record.mcdPilot} Kg \n\nExplosive - ${record.explosiveQty} Kg\nVolume -  ${record.volume} Cum\n\nPf- ${record.pf} kg/cum\nCf- ${record.cf} cum/kg\n\n17 ms NTD - ${record.ntd17}\n25 ms NTD-  ${record.ntd25}\n42 ms NTD - ${record.ntd42}\nNTD used for lead\n17 ms NTD- ${record.ntdLead17}\n25 ms NTD-  ${record.ntdLead25}\n42 ms NTD-  ${record.ntdLead42}\n\nSURE BLAST  -  ${record.sureBlast}\nIkon - ${record.ikon}\n\nInitial density -${record.initialDensity} g/cc\nFinal density - ${record.finalDensity} g/cc\n\nBooster- ${record.booster} kg\n\nDTH \n10m - ${record.dth10m}\n6m - ${record.dth6m}\n\nVibration -  ${record.vibration} mm/sec\nPeak Overpressure- ${record.db} dB\nLocation -  ${record.location}\nDistance - ${record.distance} m\nMan power - ${record.manPower}\nBlasting Time : ${record.blastingTime}`
     const encodedMessage = encodeURIComponent(message)
     window.open(`https://wa.me/?text=${encodedMessage}`, '_blank')
   }
@@ -336,9 +377,12 @@ export default function BlastPage() {
                 {availableMonths.length === 0 && <option value="">No Data</option>}
               </select>
             </div>
-            <Button onClick={() => setIsBulkModalOpen(true)} variant="outline" className="border-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-bold px-4 py-6 rounded-xl">
-              <FileSpreadsheet className="w-5 h-5 mr-2" /> Bulk Paste
+            
+            {/* UPLOAD EXCEL BUTTON */}
+            <Button onClick={() => setIsExcelModalOpen(true)} variant="outline" className="border-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-bold px-4 py-6 rounded-xl">
+              <FileSpreadsheet className="w-5 h-5 mr-2" /> Upload Excel File
             </Button>
+            
             <Button onClick={() => setIsFormModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-6 rounded-xl">
               <Plus className="w-5 h-5 mr-2" /> Add Report
             </Button>
@@ -395,6 +439,7 @@ export default function BlastPage() {
         )}
       </main>
 
+      {/* FORM MODAL */}
       {isFormModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -407,17 +452,39 @@ export default function BlastPage() {
         </div>
       )}
 
-      {isBulkModalOpen && (
+      {/* EXCEL UPLOAD MODAL */}
+      {isExcelModalOpen && (
         <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-            <div className="p-5 border-b flex justify-between"><h2 className="text-xl font-bold">Bulk Paste from Excel</h2><button onClick={() => setIsBulkModalOpen(false)}><X className="w-6 h-6"/></button></div>
-            <div className="p-5 bg-gray-50 flex-grow"><textarea value={bulkText} onChange={(e) => setBulkText(e.target.value)} placeholder="Paste Excel rows here..." className="w-full h-64 p-4 border-2 rounded-xl text-sm font-mono"></textarea></div>
-            <div className="p-5 border-t flex gap-3"><button onClick={() => setIsBulkModalOpen(false)} className="px-6 py-3 bg-gray-100 font-bold rounded-xl flex-1">Cancel</button><button onClick={handleBulkImport} className="px-6 py-3 bg-emerald-600 text-white font-bold rounded-xl flex-1 flex justify-center gap-2"><Upload className="w-5 h-5"/> Import Data</button></div>
+          <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl relative">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b">
+              <h2 className="text-xl font-bold flex items-center gap-2 text-emerald-700">
+                <FileSpreadsheet className="w-6 h-6" /> Upload Excel File
+              </h2>
+              <button onClick={() => setIsExcelModalOpen(false)} className="p-1 rounded-full bg-gray-100"><X className="w-5 h-5"/></button>
+            </div>
+
+            <div className="border-2 border-dashed border-emerald-300 bg-emerald-50/50 rounded-xl p-8 text-center">
+              <input
+                type="file"
+                id="excel-file"
+                accept=".xlsx, .xls, .csv"
+                className="hidden"
+                onChange={handleFileUpload}
+                disabled={uploading}
+              />
+              <label htmlFor="excel-file" className="cursor-pointer flex flex-col items-center gap-3">
+                <Upload className="w-12 h-12 text-emerald-600" />
+                <span className="text-base font-bold text-gray-800">
+                  {uploading ? 'Reading Excel sheet...' : 'Click to select .xlsx or .csv file'}
+                </span>
+                <span className="text-xs text-gray-500">Auto-detects columns and imports to database</span>
+              </label>
+            </div>
           </div>
         </div>
       )}
 
-      {/* TERA ORIGINAL DETAIL MODAL WAPAS LAGA DIYA HAI */}
+      {/* FULL REPORT DETAIL MODAL */}
       {selectedRecord && (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col relative">
@@ -473,10 +540,10 @@ export default function BlastPage() {
                   <div><p className="text-xs text-gray-500">NTD Lead (17/25/42)</p><p className="font-bold text-gray-900">{selectedRecord.ntdLead17} / {selectedRecord.ntdLead25} / {selectedRecord.ntdLead42}</p></div>
                   <div><p className="text-xs text-gray-500">SURE BLAST / Ikon</p><p className="font-bold text-gray-900">{selectedRecord.sureBlast} / {selectedRecord.ikon}</p></div>
                   <div><p className="text-xs text-gray-500">Booster</p><p className="font-bold text-gray-900">{selectedRecord.booster} Kg</p></div>
-                  <div><p className="text-xs text-gray-500">Density (Init / Final)</p><p className="font-bold text-gray-900">{selectedRecord.initialDensity} / {selectedRecord.finalDensity}</p></div>
+                  <div><p className="text-xs text-gray-500">Density (Init / Final)</p><p className="font-bold text-gray-900">{selectedRecord.initialDensity} / {selectedRecord.finalDensity} g/cc</p></div>
                   <div><p className="text-xs text-gray-500">DTH (10m / 6m)</p><p className="font-bold text-gray-900">{selectedRecord.dth10m} / {selectedRecord.dth6m}</p></div>
-                  <div><p className="text-xs text-gray-500">Vibration</p><p className="font-bold text-red-600">{selectedRecord.vibration} mm/s</p></div>
-                  <div><p className="text-xs text-gray-500">DB Level / Dist</p><p className="font-bold text-gray-900">{selectedRecord.db} / {selectedRecord.distance} m</p></div>
+                  <div><p className="text-xs text-gray-500">Vibration</p><p className="font-bold text-red-600">{selectedRecord.vibration} mm/sec</p></div>
+                  <div><p className="text-xs text-gray-500">Peak Overpressure</p><p className="font-bold text-gray-900">{selectedRecord.db} dB</p></div>
                   <div><p className="text-xs text-gray-500">Location</p><p className="font-bold text-gray-900">{selectedRecord.location}</p></div>
                   <div><p className="text-xs text-gray-500">Man Power</p><p className="font-bold text-gray-900">{selectedRecord.manPower}</p></div>
                 </div>
