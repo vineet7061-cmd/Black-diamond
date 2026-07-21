@@ -36,7 +36,7 @@ export default function Navigation() {
     { href: '/weighment', icon: Package, label: 'Weighment', id: 'weighment' },
     { href: '/delivery', icon: FileText, label: 'Delivery', id: 'delivery' },
     { href: '/blast', icon: Zap, label: 'Blast', id: 'blast' },
-    { href: '/billing', icon: CreditCard, label: 'ECCI', id: 'ECCI' },
+    { href: '/billing', icon: CreditCard, label: 'billing', id: 'billing' },
   ]
 
   return (
