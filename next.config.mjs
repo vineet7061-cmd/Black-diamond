@@ -10,12 +10,16 @@ const nextConfig = {
     unoptimized: true,
   },
   productionBrowserSourceMaps: false,
+  
+  // Yahan meri galti thi, maine ye line uda di thi. Isko wapas add kar diya hai
+  // taaki Turbopack wala naya error na aaye.
+  turbopack: {}, 
+  
   experimental: {
     optimizePackageImports: ['lucide-react', '@base-ui/react'],
   },
   webpack: (config) => {
-    // ASLI FIX YAHAN HAI: Webpack ki caching puri tarah band
-    // Ab ye RAM me kachra jama nahi karega
+    // Memory full hone se rokne ke liye
     config.cache = false;
     return config;
   },
