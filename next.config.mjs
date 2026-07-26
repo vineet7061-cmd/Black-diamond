@@ -8,28 +8,18 @@ const withPWA = withPWAInit({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: true, // TypeScript ki error se build fail nahi hoga
   },
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: true, // ESLint RAM nahi khayega
   },
   images: {
     unoptimized: true,
   },
-  // YAHAN HAI MAIN FIX: 
-  // Ye Next.js ko ek hi thread me build karne ko majboor karega jisse RAM bachegi
+  turbopack: {}, // Ye teri wo Turbopack wali warning hata dega
   experimental: {
-    cpus: 1, 
-    workerThreads: false,
-    memoryBasedWorkersCount: false,
     webpackMemoryOptimizations: true,
-  },
-  webpack: (config, { dev }) => {
-    if (!dev) {
-      config.cache = false;
-    }
-    return config;
-  },
+  }
 };
 
 export default withPWA(nextConfig);
