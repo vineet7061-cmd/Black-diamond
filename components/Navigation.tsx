@@ -30,12 +30,12 @@ const NavItem = ({
 export default function Navigation() {
   const pathname = usePathname()
 
-  // Blast hat gaya, 4th pe ECCI aa gaya, 5th pe Manpower
+  // 4th pe wapas Billing aa gaya, 5th pe Manpower
   const navItems = [
     { href: '/', icon: Truck, label: 'Fleet', id: 'fleet' },
     { href: '/weighment', icon: Package, label: 'Weighment', id: 'weighment' },
     { href: '/delivery', icon: FileText, label: 'Delivery', id: 'delivery' },
-    { href: '/ecci', icon: CreditCard, label: 'ECCI', id: 'ecci' },
+    { href: '/billing', icon: CreditCard, label: 'Billing', id: 'billing' },
     { href: '/manpower', icon: Users, label: 'Manpower', id: 'manpower' },
   ]
 
@@ -74,7 +74,7 @@ export default function Navigation() {
       {/* Spacer for Top Header */}
       <div className="h-16 md:h-20" />
 
-      {/* Fixed Bottom Navigation (Footer) */}
+      {/* Fixed Bottom Navigation (Footer) - Ab bina scroll ke 5 items fit aayenge */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-gray-200 h-[72px] flex items-center px-1 md:px-8 z-50 pb-safe">
         <nav className="flex justify-between items-center w-full gap-0.5 md:gap-4 overflow-visible">
           {navItems.map((item) => (
