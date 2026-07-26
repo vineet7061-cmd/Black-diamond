@@ -1,25 +1,18 @@
-import withPWAInit from "@ducanh2912/next-pwa";
-
-const withPWA = withPWAInit({
-  dest: "public",
-  disable: process.env.NODE_ENV === "development",
-});
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
-    ignoreBuildErrors: true, // TypeScript ki error se build fail nahi hoga
+    ignoreBuildErrors: true,
   },
   eslint: {
-    ignoreDuringBuilds: true, // ESLint RAM nahi khayega
+    ignoreDuringBuilds: true,
   },
   images: {
     unoptimized: true,
   },
-  turbopack: {}, // Ye teri wo Turbopack wali warning hata dega
+  productionBrowserSourceMaps: false,
   experimental: {
     webpackMemoryOptimizations: true,
   }
 };
 
-export default withPWA(nextConfig);
+export default nextConfig;
