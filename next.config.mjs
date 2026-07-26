@@ -9,8 +9,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  productionBrowserSourceMaps: false,
   experimental: {
+    optimizePackageImports: ['lucide-react', '@base-ui/react'],
     webpackMemoryOptimizations: true,
   }
 };
