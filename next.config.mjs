@@ -7,20 +7,21 @@ const withPWA = withPWAInit({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // 1. Typescript errors ko ignore karega
   typescript: {
-    ignoreBuildErrors: true, 
+    ignoreBuildErrors: true,
   },
-  // 2. ESLint sabse zyada RAM khata hai, isko build me disable kiya
   eslint: {
-    ignoreDuringBuilds: true, 
+    ignoreDuringBuilds: true,
   },
   images: {
     unoptimized: true,
   },
-  turbopack: {},
-  // 3. Vercel pe memory crash na ho isliye ye add kiya
+  // YAHAN HAI MAIN FIX: 
+  // Ye Next.js ko ek hi thread me build karne ko majboor karega jisse RAM bachegi
   experimental: {
+    cpus: 1, 
+    workerThreads: false,
+    memoryBasedWorkersCount: false,
     webpackMemoryOptimizations: true,
   },
   webpack: (config, { dev }) => {
