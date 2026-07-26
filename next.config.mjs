@@ -7,23 +7,25 @@ const withPWA = withPWAInit({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // 1. Typescript errors ko ignore karega
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: true, 
+  },
+  // 2. ESLint sabse zyada RAM khata hai, isko build me disable kiya
+  eslint: {
+    ignoreDuringBuilds: true, 
   },
   images: {
     unoptimized: true,
   },
-  // Purana error hatane ke liye
   turbopack: {},
-  
-  // NAYA: Memory leak aur Crash (Code 134) theek karne ke liye
+  // 3. Vercel pe memory crash na ho isliye ye add kiya
   experimental: {
     webpackMemoryOptimizations: true,
   },
   webpack: (config, { dev }) => {
-    // Prod build ke waqt memory limit na cross ho isliye cache ko disable kiya
     if (!dev) {
-      config.cache = false; 
+      config.cache = false;
     }
     return config;
   },
