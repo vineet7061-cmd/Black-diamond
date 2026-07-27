@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Navigation from '@/components/Navigation'
-import { Plus, Trash2, User, Phone, MapPin, CheckCircle2, ChevronRight, X, Download, FileText } from 'lucide-react'
+import { Trash2, User, Phone, MapPin, ChevronRight, X, Download, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface CustomDoc {
@@ -35,141 +35,9 @@ const ZONES = ['Q - AB', 'Q - SEB']
 const CATEGORIES = ['Engineer', 'Driver', 'Labour']
 const DRIVER_SUBCATS = ['LMV Driver', 'BMD Driver']
 
-function ManpowerForm({ onSubmit, onCancel, isSaving }: any) {
-  const [formData, setFormData] = useState<Partial<ManpowerRecord>>({
-    zone: ZONES[0],
-    category: CATEGORIES[0],
-    subcategory: '',
-    name: '', photo: '', phone: '',
-    safetyPassNo: '', safetyPassExp: '', gatePassNo: '', gatePassExp: '',
-    trainingCard: '', medical: '', drivingLicense: '', formA: '', formB: '', nominationPaper: '',
-    extraDocs: []
-  })
-
-  const [newDocName, setNewDocName] = useState('')
-  const [newDocUrl, setNewDocUrl] = useState('')
-
-  const handleInput = (field: keyof ManpowerRecord, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-  }
-
-  const addCustomDoc = () => {
-    if(newDocName) {
-      setFormData(prev => ({
-        ...prev,
-        extraDocs: [...(prev.extraDocs || []), { name: newDocName, url: newDocUrl }]
-      }))
-      setNewDocName('')
-      setNewDocUrl('')
-    }
-  }
-
-  const InputField = ({ label, field, type = "text", placeholder = "", required = false }: any) => (
-    <div>
-      <label className="block text-[11px] font-bold text-gray-600 mb-1 uppercase tracking-wider">{label}</label>
-      <input
-        type={type} placeholder={placeholder} required={required} disabled={isSaving}
-        value={formData[field as keyof ManpowerRecord] as string || ''}
-        onChange={(e) => handleInput(field, e.target.value)}
-        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:ring-2 focus:ring-blue-600"
-      />
-    </div>
-  )
-
-  return (
-    <div className="p-4">
-      <form onSubmit={(e) => { e.preventDefault(); onSubmit(formData) }} className="space-y-6">
-        
-        <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-[11px] font-bold text-gray-600 mb-1 uppercase">Zone</label>
-            <select value={formData.zone} onChange={(e) => handleInput('zone', e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border border-gray-200 outline-none focus:ring-2 focus:ring-blue-600">
-              {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold text-gray-600 mb-1 uppercase">Category</label>
-            <select value={formData.category} onChange={(e) => {
-              handleInput('category', e.target.value); 
-              if(e.target.value !== 'Driver') handleInput('subcategory', '')
-            }} className="w-full px-3 py-2 rounded-lg text-sm border border-gray-200 outline-none focus:ring-2 focus:ring-blue-600">
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          {formData.category === 'Driver' && (
-            <div>
-              <label className="block text-[11px] font-bold text-gray-600 mb-1 uppercase">Driver Type</label>
-              <select value={formData.subcategory} onChange={(e) => handleInput('subcategory', e.target.value)} required className="w-full px-3 py-2 rounded-lg text-sm border border-gray-200 outline-none focus:ring-2 focus:ring-blue-600">
-                <option value="">Select Type</option>
-                {DRIVER_SUBCATS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-          )}
-        </div>
-
-        <div className="p-4 rounded-xl border border-gray-200">
-          <h3 className="font-bold text-gray-800 mb-3 text-sm flex items-center gap-1"><User className="w-4 h-4"/> Worker Details</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <InputField label="Full Name" field="name" required={true} />
-            <InputField label="Phone Number" field="phone" type="tel" required={true} />
-            <div className="col-span-2">
-              <InputField label="Photo URL (Link)" field="photo" placeholder="https://..." />
-            </div>
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl border border-gray-200">
-          <h3 className="font-bold text-gray-800 mb-3 text-sm">Passes & Expiry</h3>
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <InputField label="Safety Pass No." field="safetyPassNo" />
-            <InputField label="Safety Pass Expiry" field="safetyPassExp" type="date" />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <InputField label="Gatepass No." field="gatePassNo" />
-            <InputField label="Gatepass Expiry" field="gatePassExp" type="date" />
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl border border-gray-200">
-          <h3 className="font-bold text-gray-800 mb-3 text-sm">Core Documents (URL Links)</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <InputField label="Training Card" field="trainingCard" />
-            <InputField label="Medical" field="medical" />
-            <InputField label="Driving License" field="drivingLicense" />
-            <InputField label="Form A" field="formA" />
-            <InputField label="Form B" field="formB" />
-            <InputField label="Nomination Paper" field="nominationPaper" />
-          </div>
-          
-          <div className="mt-6 border-t pt-4 border-gray-100">
-            <label className="block text-xs font-bold text-gray-600 mb-2">Add Extra Custom Document</label>
-            <div className="flex gap-2">
-              <input type="text" placeholder="Doc Name (e.g. Aadhar)" value={newDocName} onChange={e => setNewDocName(e.target.value)} className="flex-1 px-3 py-2 border rounded-lg text-sm" />
-              <input type="text" placeholder="File Link" value={newDocUrl} onChange={e => setNewDocUrl(e.target.value)} className="flex-1 px-3 py-2 border rounded-lg text-sm" />
-              <button type="button" onClick={addCustomDoc} className="px-4 py-2 bg-emerald-100 text-emerald-700 font-bold rounded-lg text-sm">Add</button>
-            </div>
-            {formData.extraDocs?.map((doc, idx) => (
-              <div key={idx} className="text-xs text-gray-500 mt-2 flex justify-between bg-gray-50 p-2 rounded">
-                <span>{doc.name}</span><span>Link Added</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex gap-3 pt-4 border-t border-gray-100">
-          <button type="button" onClick={onCancel} disabled={isSaving} className="px-6 py-2 bg-gray-100 text-gray-900 font-bold rounded-lg flex-1">Cancel</button>
-          <button type="submit" disabled={isSaving} className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg flex-1">{isSaving ? 'Saving...' : 'Save Worker'}</button>
-        </div>
-      </form>
-    </div>
-  )
-}
-
 export default function ManpowerPage() {
   const [records, setRecords] = useState<ManpowerRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [isFormModalOpen, setIsFormModalOpen] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
   const [selectedRecord, setSelectedRecord] = useState<ManpowerRecord | null>(null)
 
   const [currentStep, setCurrentStep] = useState(1)
@@ -185,19 +53,6 @@ export default function ManpowerPage() {
   }
 
   useEffect(() => { fetchRecords() }, [])
-
-  const handleNewEntry = async (data: any) => {
-    setIsSaving(true)
-    const newEntry = { ...data, id: Math.random().toString(36).substr(2, 9) }
-    const { error } = await supabase.from('manpower').insert([newEntry])
-    if (!error) {
-      setRecords([...records, newEntry])
-      setIsFormModalOpen(false)
-    } else {
-      alert("Error saving data: " + error.message)
-    }
-    setIsSaving(false)
-  }
 
   const deleteRecord = async (id: string) => {
     if(confirm('Are you sure you want to delete this record?')) {
@@ -227,13 +82,6 @@ export default function ManpowerPage() {
               {currentStep > 3 && selectedCategory === 'Driver' && <><ChevronRight className="w-4 h-4"/> <span className="text-blue-600">{selectedSub}</span></>}
             </div>
           </div>
-          
-          <button 
-            onClick={() => setIsFormModalOpen(true)} 
-            className="flex items-center bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-3 rounded-xl shadow-md transition-all active:scale-95"
-          >
-            <Plus className="w-5 h-5 mr-2" /> Add Worker
-          </button>
         </div>
 
         {currentStep === 1 && (
@@ -321,19 +169,6 @@ export default function ManpowerPage() {
           </div>
         )}
       </main>
-
-      {/* FORM MODAL WITH Z-INDEX FIX */}
-      {isFormModalOpen && (
-        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative">
-            <div className="sticky top-0 bg-white border-b border-gray-100 p-5 flex items-center justify-between z-10">
-              <h2 className="text-xl font-bold flex items-center gap-2"><User className="w-6 h-6 text-blue-600" /> Register Manpower</h2>
-              <button onClick={() => setIsFormModalOpen(false)} className="p-2 bg-gray-50 hover:bg-gray-100 rounded-full"><X className="w-5 h-5" /></button>
-            </div>
-            <ManpowerForm onSubmit={handleNewEntry} onCancel={() => setIsFormModalOpen(false)} isSaving={isSaving} />
-          </div>
-        </div>
-      )}
 
       {/* DOCUMENT MODAL */}
       {selectedRecord && (
