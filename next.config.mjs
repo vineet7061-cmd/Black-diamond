@@ -8,17 +8,19 @@ const withPWA = withPWAInit({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
-    ignoreBuildErrors: true, // Build ke waqt TS error RAM na khaye
+    ignoreBuildErrors: true,
   },
   eslint: {
-    ignoreDuringBuilds: true, // Build ke waqt ESLint RAM na khaye
+    ignoreDuringBuilds: true,
   },
   images: {
     unoptimized: true,
   },
-  productionBrowserSourceMaps: false, // SABSE ZAROORI: Ye aadhi RAM bacha lega
+  productionBrowserSourceMaps: false,
   experimental: {
-    webpackBuildWorker: true, // Ye Vercel pe RAM ko manage karta hai
+    // Ye do lines Vercel ki RAM bachayengi
+    cpus: 1, 
+    workerThreads: false,
   },
 };
 
